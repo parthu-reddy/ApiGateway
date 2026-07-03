@@ -53,27 +53,38 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String path = exchange.getRequest().getURI().getPath();
+        // Strip sensitive internal headers to prevent spoofing from external clients
+        ServerWebExchange sanitizedExchange = exchange.mutate()
+                .request(exchange.getRequest().mutate()
+                        .headers(headers -> {
+                            headers.remove("X-User-Id");
+                            headers.remove("X-User-Phone");
+                            headers.remove("X-User-Roles");
+                            headers.remove("X-Calling-Service");
+                        })
+                        .build())
+                .build();
 
-        // Public endpoints that don't need auth
-        if (path.contains("/api/v1/auth/initiate") || path.contains("/api/v1/auth/verify")) {
-            return chain.filter(exchange);
+        String path = sanitizedExchange.getRequest().getURI().getPath();
+        
+        // Public endpoints (Note: Auth endpoints will be hosted by downstream services e.g., /api/v1/customers/auth/initiate)
+        if (path.contains("/auth/initiate") || path.contains("/auth/verify")) {
+            return chain.filter(sanitizedExchange);
         }
         
         // Public catalog endpoints (GET only)
-        if (exchange.getRequest().getMethod().matches("GET") && 
+        if (sanitizedExchange.getRequest().getMethod().matches("GET") && 
             (path.contains("/api/v1/brands") || path.contains("/api/v1/restaurants") || path.contains("/api/v1/outlets"))) {
-            return chain.filter(exchange);
+            return chain.filter(sanitizedExchange);
         }
         
 
-
-        if (!exchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
+        if (!sanitizedExchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
+            sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return sanitizedExchange.getResponse().setComplete();
         }
 
-        String authHeader = exchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION).get(0);
+        String authHeader = sanitizedExchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION).get(0);
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             
@@ -92,8 +103,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 String roles = (rolesList != null) ? String.join(",", rolesList) : "";
                 
                 // Add trusted headers for downstream microservices
-                ServerWebExchange mutatedExchange = exchange.mutate()
-                        .request(exchange.getRequest().mutate()
+                ServerWebExchange mutatedExchange = sanitizedExchange.mutate()
+                        .request(sanitizedExchange.getRequest().mutate()
                                 .header("X-User-Id", userId)
                                 .header("X-User-Phone", phone)
                                 .header("X-User-Roles", roles)
@@ -102,13 +113,13 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         
                 return chain.filter(mutatedExchange);
             } catch (Exception e) {
-                exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-                return exchange.getResponse().setComplete();
+                sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                return sanitizedExchange.getResponse().setComplete();
             }
         }
 
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        return exchange.getResponse().setComplete();
+        sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return sanitizedExchange.getResponse().setComplete();
     }
 
     @Override
