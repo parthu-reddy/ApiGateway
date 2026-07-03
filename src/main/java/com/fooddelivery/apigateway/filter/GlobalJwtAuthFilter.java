@@ -9,17 +9,47 @@ import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.FileCopyUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import java.util.List;
 
-import javax.crypto.SecretKey;
+import jakarta.annotation.PostConstruct;
 
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
+import org.springframework.core.io.Resource;
+import org.springframework.util.FileCopyUtils;
 @Component
 public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
+    @Value("classpath:certs/public.pem")
+    private Resource publicKeyResource;
+    
+    private PublicKey publicKey;
+
+    @PostConstruct
+    public void init() {
+        try {
+            byte[] keyBytes = FileCopyUtils.copyToByteArray(publicKeyResource.getInputStream());
+            String keyString = new String(keyBytes, StandardCharsets.UTF_8)
+                    .replace("-----BEGIN PUBLIC KEY-----", "")
+                    .replace("-----END PUBLIC KEY-----", "")
+                    .replaceAll("\\s", "");
+
+            byte[] decodedKey = Base64.getDecoder().decode(keyString);
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(decodedKey);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            this.publicKey = keyFactory.generatePublic(keySpec);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load RSA public key", e);
+        }
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -48,23 +78,25 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             String token = authHeader.substring(7);
             
             try {
-                SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes());
                 Claims claims = Jwts.parserBuilder()
-                        .setSigningKey(key)
+                        .setSigningKey(publicKey)
                         .build()
                         .parseClaimsJws(token)
                         .getBody();
 
                 String userId = claims.getSubject();
                 String phone = claims.get("phone", String.class);
-                String role = claims.get("role", String.class);
+                
+                @SuppressWarnings("unchecked")
+                List<String> rolesList = claims.get("roles", List.class);
+                String roles = (rolesList != null) ? String.join(",", rolesList) : "";
                 
                 // Add trusted headers for downstream microservices
                 ServerWebExchange mutatedExchange = exchange.mutate()
                         .request(exchange.getRequest().mutate()
                                 .header("X-User-Id", userId)
                                 .header("X-User-Phone", phone)
-                                .header("X-User-Role", role)
+                                .header("X-User-Roles", roles)
                                 .build())
                         .build();
                         

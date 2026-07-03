@@ -18,11 +18,6 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
       routes:
-        - id: identity-service
-          uri: ${IDENTITY_SERVICE_URL:http://localhost:8085}
-          predicates:
-            - Path=/api/v1/auth/**
-            
         - id: customer-service
           uri: ${CUSTOMER_SERVICE_URL:http://localhost:8080}
           predicates:
