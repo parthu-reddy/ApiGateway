@@ -1,0 +1,48 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+      routes:
+        - id: identity-service
+          uri: ${IDENTITY_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/v1/auth/**
+            
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URL:http://localhost:8080}
+          predicates:
+            - Path=/api/v1/customers/**, /api/v1/orders/**, /api/v1/places/**
+        
+        - id: restaurant-service
+          uri: ${RESTAURANT_SERVICE_URL:http://localhost:8094}
+          predicates:
+            - Path=/api/v1/brands/**, /api/v1/restaurants/**, /api/v1/outlets/**
+            
+        - id: delivery-service
+          uri: ${DELIVERY_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/delivery/**, /api/v1/delivery/**, /api/v1/logistics/**
+
+jwt:
+  secret: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
