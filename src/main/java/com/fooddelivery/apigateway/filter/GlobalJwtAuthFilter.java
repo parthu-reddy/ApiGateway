@@ -28,7 +28,7 @@ import org.springframework.util.FileCopyUtils;
 @Component
 public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
-    @Value("classpath:certs/public.pem")
+    @Value("${jwt.public-key.path:classpath:certs/public.pem}")
     private Resource publicKeyResource;
     
     private PublicKey publicKey;
@@ -60,7 +60,6 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             headers.remove("X-User-Id");
                             headers.remove("X-User-Phone");
                             headers.remove("X-User-Roles");
-                            headers.remove("X-Calling-Service");
                         })
                         .build())
                 .build();
