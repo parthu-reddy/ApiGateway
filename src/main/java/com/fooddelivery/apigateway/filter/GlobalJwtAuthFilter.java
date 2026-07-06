@@ -14,7 +14,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import java.net.URI;
 import java.util.List;
+import org.springframework.http.MediaType;
 
 import jakarta.annotation.PostConstruct;
 
@@ -66,8 +68,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
         String path = sanitizedExchange.getRequest().getURI().getPath();
         
-        // Public endpoints (Note: Auth endpoints will be hosted by downstream services e.g., /api/v1/customers/auth/initiate)
-        if (path.contains("/auth/initiate") || path.contains("/auth/verify")) {
+        // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
+        if (path.equals("/") || path.contains("/auth/initiate") || path.contains("/auth/verify") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/")) {
             return chain.filter(sanitizedExchange);
         }
         
@@ -78,15 +80,17 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         }
         
 
-        if (!sanitizedExchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
-            sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return sanitizedExchange.getResponse().setComplete();
+        String token = null;
+        if (sanitizedExchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
+            String authHeader = sanitizedExchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION).get(0);
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                token = authHeader.substring(7);
+            }
+        } else if (sanitizedExchange.getRequest().getQueryParams().containsKey("token")) {
+            token = sanitizedExchange.getRequest().getQueryParams().getFirst("token");
         }
 
-        String authHeader = sanitizedExchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION).get(0);
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            
+        if (token != null && !token.isEmpty()) {
             try {
                 Claims claims = Jwts.parserBuilder()
                         .setSigningKey(publicKey)
@@ -101,6 +105,12 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 List<String> rolesList = claims.get("roles", List.class);
                 String roles = (rolesList != null) ? String.join(",", rolesList) : "";
                 
+                // Role-Based Access Control
+                if (!hasRequiredRole(path, rolesList)) {
+                    sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                    return sanitizedExchange.getResponse().setComplete();
+                }
+
                 // Add trusted headers for downstream microservices
                 ServerWebExchange mutatedExchange = sanitizedExchange.mutate()
                         .request(sanitizedExchange.getRequest().mutate()
@@ -112,13 +122,40 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         
                 return chain.filter(mutatedExchange);
             } catch (Exception e) {
-                sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-                return sanitizedExchange.getResponse().setComplete();
+                return handleUnauthorized(sanitizedExchange);
             }
         }
 
-        sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        return sanitizedExchange.getResponse().setComplete();
+        return handleUnauthorized(sanitizedExchange);
+    }
+    
+    private boolean hasRequiredRole(String path, List<String> roles) {
+        if (roles == null) return false;
+        
+        if (path.startsWith("/api/v1/customers") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/places")) {
+            return roles.contains("CUSTOMER");
+        }
+        if (path.startsWith("/api/v1/restaurants") || path.startsWith("/api/v1/brands") || path.startsWith("/api/v1/outlets")) {
+            return roles.contains("RESTAURANT");
+        }
+        if (path.startsWith("/api/v1/delivery") || path.startsWith("/api/delivery") || path.startsWith("/api/logistics") || path.startsWith("/api/fleet") || path.startsWith("/api/places") || path.startsWith("/api/maps")) {
+            return roles.contains("DELIVERY") || ((path.startsWith("/api/places") || path.startsWith("/api/maps")) && (roles.contains("CUSTOMER") || roles.contains("RESTAURANT")));
+        }
+        
+        // Strict Default-Deny for unmapped gateway routes
+        return false;
+    }
+    
+    private Mono<Void> handleUnauthorized(ServerWebExchange exchange) {
+        List<String> accept = exchange.getRequest().getHeaders().get(HttpHeaders.ACCEPT);
+        if (accept != null && accept.stream().anyMatch(a -> a.contains(MediaType.TEXT_HTML_VALUE))) {
+            exchange.getResponse().setStatusCode(HttpStatus.SEE_OTHER);
+            exchange.getResponse().getHeaders().setLocation(URI.create("/"));
+            return exchange.getResponse().setComplete();
+        }
+        
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return exchange.getResponse().setComplete();
     }
 
     @Override

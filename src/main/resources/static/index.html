@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Delivery Platform</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .container { background-color: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; text-align: center; }
+        h1 { color: #e74c3c; margin-bottom: 20px; }
+        p { margin-bottom: 30px; font-size: 16px; color: #555; }
+        .portal-btn { display: block; margin: 10px 0; padding: 15px; text-decoration: none; border-radius: 5px; font-weight: bold; transition: background-color 0.3s ease; }
+        .customer-btn { background-color: #3498db; color: white; }
+        .customer-btn:hover { background-color: #2980b9; }
+        .restaurant-btn { background-color: #2ecc71; color: white; }
+        .restaurant-btn:hover { background-color: #27ae60; }
+        .delivery-btn { background-color: #e67e22; color: white; }
+        .delivery-btn:hover { background-color: #d35400; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Food Delivery Platform</h1>
+        <p>Please select your portal to login or register.</p>
+        <a href="/customer/login" class="portal-btn customer-btn">Customer Portal</a>
+        <a href="/restaurant/login" class="portal-btn restaurant-btn">Restaurant Portal</a>
+        <a href="/delivery/login" class="portal-btn delivery-btn">Delivery Executive Portal</a>
+    </div>
+</body>
+</html>
