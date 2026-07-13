@@ -1,0 +1,6 @@
+[    8543ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:3001/api/v1/internal/auth/initiate?phoneNumber=9999888999:0
+[   13384ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:3001/api/v1/internal/auth/initiate?phoneNumber=9999888999:0
+[   18033ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:3001/api/v1/internal/auth/initiate?phoneNumber=9999888999:0
+[   19271ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:3001/api/v1/internal/auth/initiate?phoneNumber=9999888999:0
+[   20119ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:3001/api/v1/internal/auth/initiate?phoneNumber=9999888999:0
+[  964151ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/:0

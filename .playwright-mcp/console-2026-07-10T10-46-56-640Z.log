@@ -1,0 +1,7 @@
+[     424ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/favicon.ico:0
+[   36863ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/:0
+[   86982ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/internal/auth/devices/2be92bc5-0e8f-4d73-af56-78e3274f9147:0
+[   86983ms] [ERROR] Failed to remove device Error: HTTP 500
+    at Xm (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31189)
+    at Fr (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31369)
+    at async ct (http://localhost:3001/assets/index-Dl1aQkvi.js:347:67401) @ http://localhost:3001/assets/index-Dl1aQkvi.js:346

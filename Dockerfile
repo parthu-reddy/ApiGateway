@@ -8,6 +8,12 @@ USER spring
 # Copy pre-compiled JAR from the target directory
 COPY ApiGateway/target/*.jar app.jar
 
+# Copy certs directly into image to avoid volume mounting issues on macOS
+USER root
+RUN mkdir -p /certs && chown spring:spring /certs
+USER spring
+COPY --chown=spring:spring Deployment/certs/public.pem /certs/public.pem
+
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 
 EXPOSE 8080

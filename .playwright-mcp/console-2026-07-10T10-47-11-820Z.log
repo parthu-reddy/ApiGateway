@@ -1,0 +1,25 @@
+[ 1265153ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/:0
+[ 1276477ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/outlets:0
+[ 1276478ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/restaurants/rest-2/catalog/items:0
+[ 1276493ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/outlets/rest-2/menu-overrides:0
+[ 1276621ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/brands:0
+[ 1294757ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/brands/brand-1/outlets:0
+[ 1294759ms] [WARNING] Failed to fetch outlets Error: HTTP 500
+    at Xm (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31189)
+    at Fr (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31369)
+    at async aa (http://localhost:3001/assets/index-Dl1aQkvi.js:926:100834) @ http://localhost:3001/assets/index-Dl1aQkvi.js:925
+[ 1294773ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/outlets/rest-2/menu-overrides:0
+[ 1294774ms] [WARNING] Failed to fetch overrides Error: HTTP 500
+    at Xm (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31189)
+    at Fr (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31369)
+    at async Ze (http://localhost:3001/assets/index-Dl1aQkvi.js:926:101100) @ http://localhost:3001/assets/index-Dl1aQkvi.js:925
+[ 1295427ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/brands/brand-1/master-menu:0
+[ 1295427ms] [WARNING] Failed to fetch master items Error: HTTP 500
+    at Xm (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31189)
+    at Fr (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31369)
+    at async ye (http://localhost:3001/assets/index-Dl1aQkvi.js:926:100962) @ http://localhost:3001/assets/index-Dl1aQkvi.js:925
+[ 1297306ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3001/api/v1/outlets/rest-2/menu-overrides:0
+[ 1297307ms] [WARNING] Failed to fetch overrides Error: HTTP 500
+    at Xm (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31189)
+    at Fr (http://localhost:3001/assets/index-Dl1aQkvi.js:347:31369)
+    at async Ze (http://localhost:3001/assets/index-Dl1aQkvi.js:926:101100) @ http://localhost:3001/assets/index-Dl1aQkvi.js:925

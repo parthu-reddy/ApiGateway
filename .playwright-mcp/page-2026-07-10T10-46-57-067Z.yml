@@ -1,0 +1,31 @@
+- generic [ref=e4]:
+  - generic:
+    - generic:
+      - img "Cinematic gourmet dish"
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - button "Toggle Light/Dark Mode" [ref=e9] [cursor=pointer]
+      - button "Dev Admin Tools" [ref=e12] [cursor=pointer]
+      - generic [ref=e27]:
+        - generic [ref=e28]: LA BOUFFE
+        - generic [ref=e29]: ELEGANCE DELIVERED
+    - generic [ref=e32]:
+      - button [ref=e33] [cursor=pointer]:
+        - generic [ref=e38]:
+          - heading "Order Food" [level=3] [ref=e39]
+          - paragraph [ref=e40]: Browse top restaurants, customize dishes & order hot food
+      - button [ref=e41] [cursor=pointer]:
+        - generic [ref=e47]:
+          - heading "Restaurant Partner" [level=3] [ref=e48]
+          - paragraph [ref=e49]: Manage incoming cooking tickets, stock statuses & earnings
+      - button [ref=e50] [cursor=pointer]:
+        - generic [ref=e57]:
+          - heading "Delivery Executive" [level=3] [ref=e58]
+          - paragraph [ref=e59]: Accept shipping contracts, view live map routes & payout stats
+    - generic [ref=e60]:
+      - paragraph [ref=e61]: By continuing, you agree to our terms & instant delivery guidelines.
+      - generic [ref=e62]:
+        - generic [ref=e63]: SECURE END-TO-END
+        - generic [ref=e64]: •
+        - generic [ref=e65]: BIOMETRIC READY
+      - generic [ref=e66]: "TODAY'S SPECIAL: SMASHED CHEESEBURGER"
