@@ -160,6 +160,10 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     private boolean hasRequiredRole(String path, List<String> roles) {
         if (roles == null) return false;
         
+        if (roles.contains("ADMIN")) {
+            return true;
+        }
+        
         if (path.startsWith("/api/v1/users")) {
             return true;
         }
@@ -175,6 +179,10 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         }
         if (path.startsWith("/api/v1/delivery") || path.startsWith("/api/delivery") || path.startsWith("/api/logistics") || path.startsWith("/api/fleet") || path.startsWith("/api/places") || path.startsWith("/api/maps") || path.startsWith("/api/config")) {
             return roles.contains("DELIVERY") || ((path.startsWith("/api/places") || path.startsWith("/api/maps") || path.startsWith("/api/config")) && (roles.contains("CUSTOMER") || roles.contains("RESTAURANT")));
+        }
+        
+        if (path.startsWith("/api/v1/internal/users") || path.startsWith("/api/v1/internal/admin")) {
+            return roles.contains("ADMIN");
         }
         
         // Strict Default-Deny for unmapped gateway routes
