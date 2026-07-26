@@ -1,8 +1,14 @@
 package com.fooddelivery.apigateway.filter;
 
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -25,12 +31,11 @@ import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
-import org.springframework.core.io.Resource;
-import org.springframework.util.FileCopyUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 @Component
 public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
+    private static final Logger log = LoggerFactory.getLogger(GlobalJwtAuthFilter.class);
 
     @Value("${jwt.public-key.path:classpath:certs/public.pem}")
     private Resource publicKeyResource;
@@ -38,7 +43,16 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     @Autowired
     private ReactiveStringRedisTemplate redisTemplate;
     
+    @Autowired
+    private com.fooddelivery.apigateway.config.RbacConfig rbacConfig;
+    
     private PublicKey publicKey;
+    private io.jsonwebtoken.JwtParser jwtParser;
+
+    private final Cache<String, Boolean> blacklistCache = Caffeine.newBuilder()
+            .expireAfterWrite(30, TimeUnit.SECONDS)
+            .maximumSize(10000)
+            .build();
 
     @PostConstruct
     public void init() {
@@ -53,6 +67,11 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(decodedKey);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
             this.publicKey = keyFactory.generatePublic(keySpec);
+            
+            // Build the parser once and reuse it for performance
+            this.jwtParser = Jwts.parserBuilder()
+                    .setSigningKey(this.publicKey)
+                    .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to load RSA public key", e);
         }
@@ -80,14 +99,19 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         
         boolean isPublic = false;
         // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
-        if (path.equals("/") || path.contains("/api/v1/internal/auth/") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/")) {
+        if (path.equals("/") || path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/admin/otp") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/")) {
             isPublic = true;
         }
         
         // Public catalog endpoints (GET only)
-        if (sanitizedExchange.getRequest().getMethod().matches("GET") && 
-            (path.contains("/api/v1/brands") || path.contains("/api/v1/restaurants") || path.contains("/api/v1/outlets") || path.contains("/api/v1/categories") || path.contains("/api/places/"))) {
-            isPublic = true;
+        if (sanitizedExchange.getRequest().getMethod().matches("GET")) {
+            if (path.equals("/api/v1/brands") || path.startsWith("/api/v1/brands/") || 
+                path.equals("/api/v1/restaurants") || path.startsWith("/api/v1/restaurants/") || 
+                path.equals("/api/v1/outlets") || path.startsWith("/api/v1/outlets/") || 
+                path.equals("/api/v1/categories") || path.startsWith("/api/v1/categories/") || 
+                path.startsWith("/api/places/")) {
+                isPublic = true;
+            }
         }
         
         String token = null;
@@ -102,11 +126,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
         if (token != null && !token.isEmpty()) {
             try {
-                Claims claims = Jwts.parserBuilder()
-                        .setSigningKey(publicKey)
-                        .build()
-                        .parseClaimsJws(token)
-                        .getBody();
+                Claims claims = jwtParser.parseClaimsJws(token).getBody();
 
                 String userId = claims.getSubject();
                 String phone = claims.get("phone", String.class);
@@ -118,29 +138,25 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 
                 // Role-Based Access Control
                 if (!isPublic && !hasRequiredRole(path, rolesList)) {
-                    System.out.println("GlobalJwtAuthFilter 403 FORBIDDEN: path=" + path + " roles=" + rolesList);
+                    log.warn("GlobalJwtAuthFilter 403 FORBIDDEN: path={} roles={}", path, rolesList);
                     sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
                     return sanitizedExchange.getResponse().setComplete();
                 }
 
+                Boolean isBlacklistedLocal = blacklistCache.getIfPresent(sessionId);
+                if (Boolean.TRUE.equals(isBlacklistedLocal)) {
+                    return handleUnauthorized(sanitizedExchange);
+                } else if (Boolean.FALSE.equals(isBlacklistedLocal)) {
+                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path);
+                }
+
                 return redisTemplate.hasKey("BLACKLIST:SESSION:" + sessionId)
                         .flatMap(isBlacklisted -> {
+                            blacklistCache.put(sessionId, isBlacklisted);
                             if (Boolean.TRUE.equals(isBlacklisted)) {
                                 return handleUnauthorized(sanitizedExchange);
                             }
-                            
-                            System.out.println("GlobalJwtAuthFilter SUCCESS: path=" + path + " roles=" + rolesList);
-                            // Add trusted headers for downstream microservices
-                            ServerWebExchange mutatedExchange = sanitizedExchange.mutate()
-                                    .request(sanitizedExchange.getRequest().mutate()
-                                            .header("X-User-Id", userId)
-                                            .header("X-User-Phone", phone)
-                                            .header("X-User-Roles", roles)
-                                            .header("X-Session-Id", sessionId != null ? sessionId : "")
-                                            .build())
-                                    .build();
-                                    
-                            return chain.filter(mutatedExchange);
+                            return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path);
                         });
             } catch (Exception e) {
                 if (isPublic) {
@@ -157,34 +173,56 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         return handleUnauthorized(sanitizedExchange);
     }
     
+    private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path) {
+        log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
+        ServerWebExchange mutatedExchange = exchange.mutate()
+                .request(exchange.getRequest().mutate()
+                        .header("X-User-Id", userId)
+                        .header("X-User-Phone", phone)
+                        .header("X-User-Roles", roles)
+                        .header("X-Session-Id", sessionId != null ? sessionId : "")
+                        .build())
+                .build();
+                
+        return chain.filter(mutatedExchange);
+    }
+    
     private boolean hasRequiredRole(String path, List<String> roles) {
         if (roles == null) return false;
         
         if (roles.contains("ADMIN")) {
             return true;
         }
-        
-        if (path.startsWith("/api/v1/users")) {
-            return true;
+
+        Map<String, List<String>> rules = rbacConfig.getRules();
+        if (rules == null || rules.isEmpty()) {
+            // Fallback to strict default-deny if configuration is missing
+            return false;
+        }
+
+        // Iterate through configured roles to see if the user's role matches any allowed route
+        for (String userRole : roles) {
+            String roleKey = userRole.toLowerCase();
+            List<String> allowedPaths = rules.get(roleKey);
+            if (allowedPaths != null) {
+                for (String allowedPath : allowedPaths) {
+                    if (path.startsWith(allowedPath)) {
+                        return true;
+                    }
+                }
+            }
         }
         
-        if (path.startsWith("/api/v1/customers") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/places")) {
-            return roles.contains("CUSTOMER");
+        // Check "AUTHENTICATED" pseudo-role (any logged in user)
+        List<String> authPaths = rules.get("authenticated");
+        if (authPaths != null) {
+            for (String allowedPath : authPaths) {
+                if (path.startsWith(allowedPath)) {
+                    return true;
+                }
+            }
         }
-        if (path.startsWith("/api/v1/restaurants") || path.startsWith("/api/v1/brands") || path.startsWith("/api/v1/outlets") || path.startsWith("/api/v1/categories")) {
-            return roles.contains("RESTAURANT");
-        }
-        if (path.startsWith("/api/v1/logistics")) {
-            return roles.contains("DELIVERY") || roles.contains("RESTAURANT");
-        }
-        if (path.startsWith("/api/v1/delivery") || path.startsWith("/api/delivery") || path.startsWith("/api/logistics") || path.startsWith("/api/fleet") || path.startsWith("/api/places") || path.startsWith("/api/maps") || path.startsWith("/api/config")) {
-            return roles.contains("DELIVERY") || ((path.startsWith("/api/places") || path.startsWith("/api/maps") || path.startsWith("/api/config")) && (roles.contains("CUSTOMER") || roles.contains("RESTAURANT")));
-        }
-        
-        if (path.startsWith("/api/v1/internal/users") || path.startsWith("/api/v1/internal/admin")) {
-            return roles.contains("ADMIN");
-        }
-        
+
         // Strict Default-Deny for unmapped gateway routes
         return false;
     }
