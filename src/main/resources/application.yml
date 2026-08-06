@@ -6,8 +6,13 @@ spring:
   cloud:
     gateway:
       default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 20
-            redis-rate-limiter.burstCapacity: 40
-            key-resolver: "#{@ipKeyResolver}"
+      - name: RequestRateLimiter
+        args:
+          redis-rate-limiter.replenishRate: 20
+          redis-rate-limiter.burstCapacity: 40
+          key-resolver: '#{@ipKeyResolver}'
+      routes:
+      - id: wallet-service
+        uri: lb://wallet-service
+        predicates:
+        - Path=/api/v1/wallets/**
