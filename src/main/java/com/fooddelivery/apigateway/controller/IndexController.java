@@ -6,12 +6,11 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-import lombok.extern.slf4j.Slf4j;
 
 @RestController
-@Slf4j
 public class IndexController {
-
+    @java.lang.SuppressWarnings("all")
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(IndexController.class);
     @Value("classpath:/static/index.html")
     private Resource indexHtml;
 
