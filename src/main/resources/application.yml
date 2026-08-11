@@ -12,6 +12,49 @@ spring:
           redis-rate-limiter.burstCapacity: 40
           key-resolver: '#{@ipKeyResolver}'
       routes:
+      - id: admin-customer-routes
+        uri: lb://customer-application
+        predicates:
+        - Path=/api/v1/internal/admin/orders/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
+      - id: admin-delivery-routes
+        uri: lb://delivery-executive-application
+        predicates:
+        - Path=/api/v1/internal/admin/delivery/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
+      - id: admin-restaurant-routes
+        uri: lb://restaurant-application
+        predicates:
+        - Path=/api/v1/internal/admin/restaurants/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
+      - id: admin-identity-routes
+        uri: lb://identity-service
+        predicates:
+        - Path=/api/v1/internal/admin/users/**, /api/v1/internal/users/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: 20
+            key-resolver: '#{@ipKeyResolver}'
+        - name: CircuitBreaker
+          args:
+            name: identityServiceCircuitBreaker
       - id: wallet-service
         uri: lb://wallet-service
         predicates:
