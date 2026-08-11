@@ -13,7 +13,7 @@ spring:
           key-resolver: '#{@ipKeyResolver}'
       routes:
       - id: admin-customer-routes
-        uri: lb://customer-application
+        uri: lb://customer-service
         predicates:
         - Path=/api/v1/internal/admin/orders/**
         filters:
@@ -23,7 +23,7 @@ spring:
             redis-rate-limiter.burstCapacity: 10
             key-resolver: '#{@ipKeyResolver}'
       - id: admin-delivery-routes
-        uri: lb://delivery-executive-application
+        uri: lb://delivery-service
         predicates:
         - Path=/api/v1/internal/admin/delivery/**
         filters:
@@ -33,7 +33,7 @@ spring:
             redis-rate-limiter.burstCapacity: 10
             key-resolver: '#{@ipKeyResolver}'
       - id: admin-restaurant-routes
-        uri: lb://restaurant-application
+        uri: lb://restaurant-service
         predicates:
         - Path=/api/v1/internal/admin/restaurants/**
         filters:
