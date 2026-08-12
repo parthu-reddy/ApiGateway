@@ -109,7 +109,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 path.equals("/api/v1/restaurants") || path.startsWith("/api/v1/restaurants/") || 
                 path.equals("/api/v1/outlets") || path.startsWith("/api/v1/outlets/") || 
                 path.equals("/api/v1/categories") || path.startsWith("/api/v1/categories/") || 
-                path.startsWith("/api/places/")) {
+                path.startsWith("/api/places/") || path.equals("/api/config/maps-key")) {
                 isPublic = true;
             }
         }
