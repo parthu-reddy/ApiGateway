@@ -34,8 +34,8 @@ import java.util.Base64;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 @Component
+@lombok.extern.slf4j.Slf4j
 public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
-    private static final Logger log = LoggerFactory.getLogger(GlobalJwtAuthFilter.class);
 
     @Value("${jwt.public-key.path:classpath:certs/public.pem}")
     private Resource publicKeyResource;
@@ -100,6 +100,11 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         boolean isPublic = false;
         // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
         if (path.equals("/") || path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/admin/otp") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/")) {
+            isPublic = true;
+        }
+        
+        // Swagger / OpenAPI endpoints
+        if (path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs") || path.startsWith("/webjars/") || path.startsWith("/service-docs/")) {
             isPublic = true;
         }
         

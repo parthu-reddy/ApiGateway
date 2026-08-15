@@ -10,9 +10,8 @@ import java.util.Map;
 import java.util.List;
 
 @RestController
+@lombok.extern.slf4j.Slf4j
 public class FrontendLogController {
-
-    private static final Logger log = LoggerFactory.getLogger("FrontendLogger");
 
     @PostMapping("/api/logs")
     public ResponseEntity<Void> logFrontendEvents(@RequestBody Map<String, Object> payload) {
