@@ -1,0 +1,64 @@
+spring:
+  redis:
+    enabled: false
+  main:
+    allow-bean-definition-overriding: true
+    web-application-type: none
+  cloud:
+    config:
+      enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+  flyway:
+    enabled: false
+  cache:
+    type: none
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+eureka:
+  client:
+    enabled: false
+management:
+  health:
+    redis:
+      enabled: false
+r2:
+  endpoint: http://dummy
+  bucket-name: dummy
+  public-url: http://dummy
+  access-key: dummy
+  secret-key: dummy
+olamaps:
+  api:
+    key: dummy
+brevo:
+  api:
+    key: dummy
+exotel:
+  api:
+    key: dummy
+twilio:
+  api:
+    key: dummy
+stripe:
+  api:
+    key: dummy
+razorpay:
+  api:
+    key: dummy
+ondc:
+  api:
+    key: dummy
+delivery:
+  executive:
+    radius: 5.0
