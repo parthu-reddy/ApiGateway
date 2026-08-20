@@ -83,6 +83,13 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
+        // Extract client fingerprint or generate one
+        String fingerprint = exchange.getRequest().getHeaders().getFirst("X-Client-Fingerprint");
+        if (fingerprint == null || fingerprint.isEmpty()) {
+            fingerprint = java.util.UUID.randomUUID().toString();
+        }
+        final String finalFingerprint = fingerprint;
+
         // Strip sensitive internal headers to prevent spoofing from external clients
         ServerWebExchange sanitizedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
@@ -91,6 +98,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             headers.remove("X-User-Phone");
                             headers.remove("X-User-Roles");
                             headers.remove("X-Session-Id");
+                            headers.remove("X-Client-Fingerprint");
                         })
                         .build())
                 .build();
@@ -152,7 +160,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 if (Boolean.TRUE.equals(isBlacklistedLocal)) {
                     return handleUnauthorized(sanitizedExchange);
                 } else if (Boolean.FALSE.equals(isBlacklistedLocal)) {
-                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path);
+                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint);
                 }
 
                 return redisTemplate.hasKey("BLACKLIST:SESSION:" + sessionId)
@@ -161,7 +169,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             if (Boolean.TRUE.equals(isBlacklisted)) {
                                 return handleUnauthorized(sanitizedExchange);
                             }
-                            return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path);
+                            return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint);
                         });
             } catch (Exception e) {
                 if (isPublic) {
@@ -178,7 +186,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         return handleUnauthorized(sanitizedExchange);
     }
     
-    private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path) {
+    private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path, String fingerprint) {
         log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
@@ -186,6 +194,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         .header("X-User-Phone", phone)
                         .header("X-User-Roles", roles)
                         .header("X-Session-Id", sessionId != null ? sessionId : "")
+                        .header("X-Client-Fingerprint", fingerprint)
                         .build())
                 .build();
                 

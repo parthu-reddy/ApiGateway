@@ -1,13 +1,8 @@
 spring:
-  kafka:
-    listener:
-      observation-enabled: true
-    template:
-      observation-enabled: true
   application:
     name: api-gateway
   config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: optional:classpath:config/platform-defaults.yml,optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   cloud:
     gateway:
       default-filters:
@@ -69,6 +64,36 @@ spring:
           args:
             redis-rate-limiter.replenishRate: 5
             redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
+      - id: reviews-service
+        uri: lb://reviews-service
+        predicates:
+        - Path=/api/v1/reviews/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: 20
+            key-resolver: '#{@ipKeyResolver}'
+      - id: campaign-service
+        uri: lb://campaign-service
+        predicates:
+        - Path=/api/v1/advertisers/**, /api/v1/campaigns/**, /api/v1/ads/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: 20
+            key-resolver: '#{@ipKeyResolver}'
+      - id: event-tracking-service
+        uri: lb://event-tracking-service
+        predicates:
+        - Path=/api/v1/tracking/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 100
+            redis-rate-limiter.burstCapacity: 200
             key-resolver: '#{@ipKeyResolver}'
       - id: service-docs-customer
         uri: lb://customer-service
@@ -154,53 +179,60 @@ spring:
         - Path=/service-docs/government-id-validation-service/**
         filters:
         - RewritePath=/service-docs/government-id-validation-service/(.*), /$1
+      - id: service-docs-reviews
+        uri: lb://reviews-service
+        predicates:
+        - Path=/service-docs/reviews-service/**
+        filters:
+        - RewritePath=/service-docs/reviews-service/(.*), /$1
       - id: service-docs-event
         uri: lb://event-tracking-service
         predicates:
         - Path=/service-docs/event-tracking-service/**
         filters:
         - RewritePath=/service-docs/event-tracking-service/(.*), /$1
-
 springdoc:
   swagger-ui:
     urls:
-      - name: Customer Service
-        url: /service-docs/customer-service/v3/api-docs
-      - name: Restaurant Service
-        url: /service-docs/restaurant-service/v3/api-docs
-      - name: Delivery Service
-        url: /service-docs/delivery-service/v3/api-docs
-      - name: Identity Service
-        url: /service-docs/identity-service/v3/api-docs
-      - name: Payment Service
-        url: /service-docs/payment-service/v3/api-docs
-      - name: Maps Integration
-        url: /service-docs/mapsintegration/v3/api-docs
-      - name: Notification Service
-        url: /service-docs/notification-service/v3/api-docs
-      - name: Ledger Service
-        url: /service-docs/ledger-service/v3/api-docs
-      - name: Chat Service
-        url: /service-docs/chat-service/v3/api-docs
-      - name: ONDC Integration
-        url: /service-docs/ondc-integration-service/ondc/v3/api-docs
-      - name: Wallet Service
-        url: /service-docs/wallet-service/v3/api-docs
-      - name: Campaign Service
-        url: /service-docs/campaign-service/v3/api-docs
-      - name: Bidding Engine
-        url: /service-docs/bidding-engine/v3/api-docs
-      - name: Government ID Validation
-        url: /service-docs/government-id-validation-service/v3/api-docs
-      - name: Event Tracking
-        url: /service-docs/event-tracking-service/v3/api-docs
-
-
-management:
-  tracing:
-    enabled: true
-    sampling:
-      probability: 1.0
-  otlp:
-    tracing:
-      endpoint: http://localhost:4318/v1/traces
+    - name: Customer Service
+      url: /service-docs/customer-service/v3/api-docs
+    - name: Restaurant Service
+      url: /service-docs/restaurant-service/v3/api-docs
+    - name: Delivery Service
+      url: /service-docs/delivery-service/v3/api-docs
+    - name: Identity Service
+      url: /service-docs/identity-service/v3/api-docs
+    - name: Payment Service
+      url: /service-docs/payment-service/v3/api-docs
+    - name: Maps Integration
+      url: /service-docs/mapsintegration/v3/api-docs
+    - name: Notification Service
+      url: /service-docs/notification-service/v3/api-docs
+    - name: Ledger Service
+      url: /service-docs/ledger-service/v3/api-docs
+    - name: Chat Service
+      url: /service-docs/chat-service/v3/api-docs
+    - name: ONDC Integration
+      url: /service-docs/ondc-integration-service/ondc/v3/api-docs
+    - name: Wallet Service
+      url: /service-docs/wallet-service/v3/api-docs
+    - name: Campaign Service
+      url: /service-docs/campaign-service/v3/api-docs
+    - name: Bidding Engine
+      url: /service-docs/bidding-engine/v3/api-docs
+    - name: Government ID Validation
+      url: /service-docs/government-id-validation-service/v3/api-docs
+    - name: Reviews Service
+      url: /service-docs/reviews-service/v3/api-docs
+    - name: Event Tracking
+      url: /service-docs/event-tracking-service/v3/api-docs
+rbac:
+  rules:
+    advertiser:
+    - /api/v1/advertisers
+    - /api/v1/campaigns
+    restaurant_owner:
+    - /api/v1/advertisers
+    - /api/v1/campaigns
+    customer:
+    - /api/v1/ads
