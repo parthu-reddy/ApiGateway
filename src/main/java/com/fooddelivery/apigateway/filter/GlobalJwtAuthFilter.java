@@ -83,12 +83,17 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // Extract client fingerprint or generate one
-        String fingerprint = exchange.getRequest().getHeaders().getFirst("X-Client-Fingerprint");
-        if (fingerprint == null || fingerprint.isEmpty()) {
-            fingerprint = java.util.UUID.randomUUID().toString();
-        }
-        final String finalFingerprint = fingerprint;
+        // Extract client IP and User-Agent to derive a trusted client fingerprint
+        String clientIp = exchange.getRequest().getRemoteAddress() != null ? 
+            exchange.getRequest().getRemoteAddress().getAddress().getHostAddress() : "unknown-ip";
+        String userAgent = exchange.getRequest().getHeaders().getFirst(HttpHeaders.USER_AGENT);
+        if (userAgent == null) userAgent = "unknown-agent";
+        
+        String derivedFingerprint = java.util.UUID.nameUUIDFromBytes(
+            (clientIp + "|" + userAgent).getBytes(StandardCharsets.UTF_8)
+        ).toString();
+        
+        final String finalFingerprint = derivedFingerprint;
 
         // Strip sensitive internal headers to prevent spoofing from external clients
         ServerWebExchange sanitizedExchange = exchange.mutate()

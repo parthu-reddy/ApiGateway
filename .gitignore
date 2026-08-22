@@ -34,3 +34,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Maven help:effective-pom output -- a build artifact, regenerate with:
+#   mvn -q help:effective-pom -Doutput=effective-pom.xml
+# (use -Doutput= or -B, never `> file`, or Maven writes ANSI colour codes into it)
+effective-pom.xml

@@ -75,15 +75,35 @@ spring:
             redis-rate-limiter.replenishRate: 10
             redis-rate-limiter.burstCapacity: 20
             key-resolver: '#{@ipKeyResolver}'
+      - id: wallet-topup-route
+        uri: lb://wallet-service
+        predicates:
+        - Path=/api/v1/advertisers/*/wallet/topups
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
       - id: campaign-service
         uri: lb://campaign-service
         predicates:
-        - Path=/api/v1/advertisers/**, /api/v1/campaigns/**, /api/v1/ads/**
+        - Path=/api/v1/advertisers/**, /api/v1/campaigns/**
         filters:
         - name: RequestRateLimiter
           args:
             redis-rate-limiter.replenishRate: 10
             redis-rate-limiter.burstCapacity: 20
+            key-resolver: '#{@ipKeyResolver}'
+      - id: bidding-engine
+        uri: lb://bidding-engine
+        predicates:
+        - Path=/api/v1/ads/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 50
+            redis-rate-limiter.burstCapacity: 100
             key-resolver: '#{@ipKeyResolver}'
       - id: event-tracking-service
         uri: lb://event-tracking-service

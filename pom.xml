@@ -5,7 +5,9 @@
         <groupId>com.fooddelivery</groupId>
         <artifactId>food-delivery-parent</artifactId>
         <version>1.0-SNAPSHOT</version>
-        <relativePath>../pom.xml</relativePath>
+        <!-- Empty relativePath: resolve from the artifact repository, not a sibling
+             directory. This repo must build on its own, without the workspace. -->
+        <relativePath/>
     </parent>
 	<groupId>com.fooddelivery</groupId>
 	<artifactId>api-gateway</artifactId>
