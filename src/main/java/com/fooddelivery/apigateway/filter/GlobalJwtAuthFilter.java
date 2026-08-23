@@ -40,6 +40,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     @Value("${jwt.public-key.path:classpath:certs/public.pem}")
     private Resource publicKeyResource;
     
+    @Value("${security.identity.hmac-secret:dev-only-insecure-identity-hmac-secret-override-in-production-12}")
+    private String identityHmacSecret;
+    
     @Autowired
     private ReactiveStringRedisTemplate redisTemplate;
     
@@ -104,11 +107,47 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             headers.remove("X-User-Roles");
                             headers.remove("X-Session-Id");
                             headers.remove("X-Client-Fingerprint");
+                            headers.remove("X-Identity-Signature");
+                            headers.remove("X-Issued-At");
                         })
                         .build())
                 .build();
 
         String path = sanitizedExchange.getRequest().getURI().getPath();
+        
+        // 1. Check for valid internal service-to-service IdentityToken
+        String incUserId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
+        String incRoles = exchange.getRequest().getHeaders().getFirst("X-User-Roles");
+        String incPhone = exchange.getRequest().getHeaders().getFirst("X-User-Phone");
+        String incSessionId = exchange.getRequest().getHeaders().getFirst("X-Session-Id");
+        String incSignature = exchange.getRequest().getHeaders().getFirst("X-Identity-Signature");
+        String incIssuedAtStr = exchange.getRequest().getHeaders().getFirst("X-Issued-At");
+
+        if (incSignature != null && !incSignature.isEmpty()) {
+            long issuedAt = 0L;
+            if (incIssuedAtStr != null) {
+                try { issuedAt = Long.parseLong(incIssuedAtStr); } catch (NumberFormatException ignored) {}
+            }
+            String expectedSig = signIdentity(incUserId, incRoles, incPhone, incSessionId, issuedAt);
+            if (expectedSig.equals(incSignature)) {
+                log.info("GlobalJwtAuthFilter - Valid Internal Service Request: path={}", path);
+                ServerWebExchange internalExchange = exchange.mutate()
+                    .request(exchange.getRequest().mutate()
+                        .header("X-Client-Fingerprint", finalFingerprint)
+                        .build())
+                    .build();
+                return chain.filter(internalExchange);
+            }
+        }
+
+        // 2. Block external access to internal endpoints (unless it's public auth routes)
+        if (path.startsWith("/api/v1/internal/")) {
+            if (!(path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/admin/otp"))) {
+                log.warn("GlobalJwtAuthFilter 403 FORBIDDEN: External access to internal path={}", path);
+                sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                return sanitizedExchange.getResponse().setComplete();
+            }
+        }
         
         boolean isPublic = false;
         // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
@@ -161,11 +200,13 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                     return sanitizedExchange.getResponse().setComplete();
                 }
 
+                long issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().getTime() : 0L;
+
                 Boolean isBlacklistedLocal = blacklistCache.getIfPresent(sessionId);
                 if (Boolean.TRUE.equals(isBlacklistedLocal)) {
                     return handleUnauthorized(sanitizedExchange);
                 } else if (Boolean.FALSE.equals(isBlacklistedLocal)) {
-                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint);
+                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint, issuedAt);
                 }
 
                 return redisTemplate.hasKey("BLACKLIST:SESSION:" + sessionId)
@@ -174,7 +215,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             if (Boolean.TRUE.equals(isBlacklisted)) {
                                 return handleUnauthorized(sanitizedExchange);
                             }
-                            return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint);
+                            return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint, issuedAt);
                         });
             } catch (Exception e) {
                 if (isPublic) {
@@ -191,8 +232,31 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         return handleUnauthorized(sanitizedExchange);
     }
     
-    private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path, String fingerprint) {
+    private String signIdentity(String userId, String roles, String phone, String sessionId, long issuedAt) {
+        String payload = String.format("%s|%s|%s|%s|%d", 
+            userId != null ? userId : "",
+            roles != null ? roles : "",
+            phone != null ? phone : "",
+            sessionId != null ? sessionId : "",
+            issuedAt);
+            
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            javax.crypto.spec.SecretKeySpec secretKeySpec = new javax.crypto.spec.SecretKeySpec(
+                identityHmacSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] signatureBytes = mac.doFinal(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signatureBytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate identity signature", e);
+        }
+    }
+
+    private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path, String fingerprint, long issuedAt) {
         log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
+        
+        String signature = signIdentity(userId, roles, phone, sessionId, issuedAt);
+        
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
                         .header("X-User-Id", userId)
@@ -200,6 +264,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         .header("X-User-Roles", roles)
                         .header("X-Session-Id", sessionId != null ? sessionId : "")
                         .header("X-Client-Fingerprint", fingerprint)
+                        .header("X-Identity-Signature", signature)
+                        .header("X-Issued-At", String.valueOf(issuedAt))
                         .build())
                 .build();
                 
@@ -225,7 +291,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             List<String> allowedPaths = rules.get(roleKey);
             if (allowedPaths != null) {
                 for (String allowedPath : allowedPaths) {
-                    if (path.startsWith(allowedPath)) {
+                    if (path.equals(allowedPath) || path.startsWith(allowedPath + "/")) {
                         return true;
                     }
                 }
@@ -236,7 +302,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         List<String> authPaths = rules.get("authenticated");
         if (authPaths != null) {
             for (String allowedPath : authPaths) {
-                if (path.startsWith(allowedPath)) {
+                if (path.equals(allowedPath) || path.startsWith(allowedPath + "/")) {
                     return true;
                 }
             }
