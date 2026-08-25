@@ -142,7 +142,12 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
         // 2. Block external access to internal endpoints (unless it's public auth routes)
         if (path.startsWith("/api/v1/internal/")) {
-            if (!(path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/admin/otp"))) {
+            if (!(path.equals("/api/v1/internal/auth/initiate") || 
+                  path.equals("/api/v1/internal/auth/verify") || 
+                  path.equals("/api/v1/internal/auth/admin/otp") ||
+                  path.equals("/api/v1/internal/auth/logout") ||
+                  path.equals("/api/v1/internal/auth/sessions") ||
+                  path.startsWith("/api/v1/internal/auth/sessions/"))) {
                 log.warn("GlobalJwtAuthFilter 403 FORBIDDEN: External access to internal path={}", path);
                 sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
                 return sanitizedExchange.getResponse().setComplete();
