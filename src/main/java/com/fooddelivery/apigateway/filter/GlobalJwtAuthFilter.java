@@ -102,9 +102,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         ServerWebExchange sanitizedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
                         .headers(headers -> {
-                            headers.remove("X-User-Id");
-                            headers.remove("X-User-Phone");
-                            headers.remove("X-User-Roles");
+                            headers.remove(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ID);
+                            headers.remove(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_PHONE);
+                            headers.remove(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ROLES);
                             headers.remove("X-Session-Id");
                             headers.remove("X-Client-Fingerprint");
                             headers.remove("X-Identity-Signature");
@@ -116,9 +116,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         String path = sanitizedExchange.getRequest().getURI().getPath();
         
         // 1. Check for valid internal service-to-service IdentityToken
-        String incUserId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
-        String incRoles = exchange.getRequest().getHeaders().getFirst("X-User-Roles");
-        String incPhone = exchange.getRequest().getHeaders().getFirst("X-User-Phone");
+        String incUserId = exchange.getRequest().getHeaders().getFirst(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ID);
+        String incRoles = exchange.getRequest().getHeaders().getFirst(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ROLES);
+        String incPhone = exchange.getRequest().getHeaders().getFirst(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_PHONE);
         String incSessionId = exchange.getRequest().getHeaders().getFirst("X-Session-Id");
         String incSignature = exchange.getRequest().getHeaders().getFirst("X-Identity-Signature");
         String incIssuedAtStr = exchange.getRequest().getHeaders().getFirst("X-Issued-At");
@@ -270,9 +270,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
-                        .header("X-User-Id", userId)
-                        .header("X-User-Phone", phone)
-                        .header("X-User-Roles", roles)
+                        .header(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ID, userId)
+                        .header(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_PHONE, phone)
+                        .header(com.fooddelivery.common.constants.HeaderConstants.HEADER_USER_ROLES, roles)
                         .header("X-Session-Id", sessionId != null ? sessionId : "")
                         .header("X-Client-Fingerprint", fingerprint)
                         .header("X-Identity-Signature", signature)
@@ -286,7 +286,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     private boolean hasRequiredRole(String path, List<String> roles) {
         if (roles == null) return false;
         
-        if (roles.contains("ADMIN")) {
+        if (roles.contains(com.fooddelivery.common.enums.UserRole.ADMIN.name())) {
             return true;
         }
 
