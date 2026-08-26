@@ -258,3 +258,5 @@ rbac:
     - /api/v1/campaigns
     customer:
     - /api/v1/ads
+    authenticated:
+    - /api/v1/logistics

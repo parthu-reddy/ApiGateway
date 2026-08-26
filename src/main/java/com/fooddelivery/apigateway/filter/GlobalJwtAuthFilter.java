@@ -140,9 +140,10 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             }
         }
 
-        // 2. Block external access to internal endpoints (unless it's public auth routes)
+        // 2. Block external access to internal endpoints (unless it's public auth routes or admin routes)
         if (path.startsWith("/api/v1/internal/")) {
-            if (!(path.equals("/api/v1/internal/auth/initiate") || 
+            if (!(path.startsWith("/api/v1/internal/admin/") ||
+                  path.equals("/api/v1/internal/auth/initiate") || 
                   path.equals("/api/v1/internal/auth/verify") || 
                   path.equals("/api/v1/internal/auth/admin/otp") ||
                   path.equals("/api/v1/internal/auth/logout") ||
