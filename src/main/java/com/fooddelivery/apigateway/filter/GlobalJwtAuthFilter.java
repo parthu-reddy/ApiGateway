@@ -258,7 +258,12 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path, String fingerprint, long issuedAt) {
-        log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
+        String upgradeHeader = exchange.getRequest().getHeaders().getFirst("Upgrade");
+        if ("websocket".equalsIgnoreCase(upgradeHeader)) {
+            log.info("GlobalJwtAuthFilter SUCCESS (WebSocket Upgrade): path={} roles={} userId={}", path, rolesList, userId);
+        } else {
+            log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
+        }
         
         String signature = signIdentity(userId, roles, phone, sessionId, issuedAt);
         
