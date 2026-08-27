@@ -117,6 +117,24 @@ spring:
             redis-rate-limiter.replenishRate: 100
             redis-rate-limiter.burstCapacity: 200
             key-resolver: '#{@ipKeyResolver}'
+      - id: ola-maps-proxy
+        uri: https://api.olamaps.io
+        predicates:
+        - Path=/olamaps/**
+        filters:
+        - RewritePath=/olamaps/(?<segment>.*), /${segment}
+        - AddRequestParameter=api_key, ${OLA_MAPS_API_KEY:n3wR0t4t3d0l4M4p5K3y9999999999999999999}
+      - id: maps-integration-api
+        uri: lb://mapsintegration
+        predicates:
+        - Path=/api/v1/places/**, /api/v1/logistics/**, /api/v1/fleet/**
+        filters:
+        - RewritePath=/api/v1/(.*), /api/$1
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: service-docs-customer
         uri: lb://customer-service
         predicates:
