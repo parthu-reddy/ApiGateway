@@ -20,6 +20,14 @@
 		<spring-cloud.version>2023.0.2</spring-cloud.version>
 	</properties>
 	<dependencies>
+		<!-- The shared identity signing. Safe here where common-library is not: this module pulls
+		     spring-context only, so it cannot put Spring MVC on a Spring Cloud Gateway classpath
+		     (GatewayClassPathWarningAutoConfiguration would refuse to start). -->
+		<dependency>
+			<groupId>com.fooddelivery</groupId>
+			<artifactId>identity-signing</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

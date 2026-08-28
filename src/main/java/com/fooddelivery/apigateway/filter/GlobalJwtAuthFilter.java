@@ -40,9 +40,18 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     @Value("${jwt.public-key.path:classpath:certs/public.pem}")
     private Resource publicKeyResource;
     
-    @Value("${security.identity.hmac-secret:dev-only-insecure-identity-hmac-secret-override-in-production-12}")
-    private String identityHmacSecret;
-    
+    /**
+     * The one implementation of identity signing, shared with every service via the identity-signing
+     * module. It lives outside common-library because this gateway cannot depend on that: it drags
+     * spring-boot-starter-web onto the classpath and Spring Cloud Gateway then refuses to start
+     * (GatewayClassPathWarningAutoConfiguration.SpringMvcFoundOnClasspathConfiguration).
+     *
+     * The bean's own constructor carries the prod guard and the dev-key fallback, so there is
+     * nothing to duplicate here.
+     */
+    @Autowired
+    private com.fooddelivery.common.security.IdentityTokenService identityTokenService;
+
     @Autowired
     private ReactiveStringRedisTemplate redisTemplate;
     
@@ -128,8 +137,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             if (incIssuedAtStr != null) {
                 try { issuedAt = Long.parseLong(incIssuedAtStr); } catch (NumberFormatException ignored) {}
             }
-            String expectedSig = signIdentity(incUserId, incRoles, incPhone, incSessionId, issuedAt);
-            if (expectedSig.equals(incSignature)) {
+            if (identityTokenService.verify(incSignature, incUserId, incRoles, incPhone, incSessionId, issuedAt)) {
                 log.info("GlobalJwtAuthFilter - Valid Internal Service Request: path={}", path);
                 ServerWebExchange internalExchange = exchange.mutate()
                     .request(exchange.getRequest().mutate()
@@ -238,25 +246,6 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         return handleUnauthorized(sanitizedExchange);
     }
     
-    private String signIdentity(String userId, String roles, String phone, String sessionId, long issuedAt) {
-        String payload = String.format("%s|%s|%s|%s|%d", 
-            userId != null ? userId : "",
-            roles != null ? roles : "",
-            phone != null ? phone : "",
-            sessionId != null ? sessionId : "",
-            issuedAt);
-            
-        try {
-            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
-            javax.crypto.spec.SecretKeySpec secretKeySpec = new javax.crypto.spec.SecretKeySpec(
-                identityHmacSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256");
-            mac.init(secretKeySpec);
-            byte[] signatureBytes = mac.doFinal(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signatureBytes);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate identity signature", e);
-        }
-    }
 
     private Mono<Void> proceedWithValidToken(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String phone, String roles, String sessionId, List<String> rolesList, String path, String fingerprint, long issuedAt) {
         String upgradeHeader = exchange.getRequest().getHeaders().getFirst("Upgrade");
@@ -266,7 +255,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             log.info("GlobalJwtAuthFilter SUCCESS: path={} roles={}", path, rolesList);
         }
         
-        String signature = signIdentity(userId, roles, phone, sessionId, issuedAt);
+        String signature = identityTokenService.sign(userId, roles, phone, sessionId, issuedAt);
         
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()

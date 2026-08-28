@@ -24,6 +24,16 @@ spring:
             redis-rate-limiter.replenishRate: 5
             redis-rate-limiter.burstCapacity: 10
             key-resolver: '#{@ipKeyResolver}'
+      - id: admin-refund-routes
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/internal/admin/refunds/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
       - id: admin-delivery-routes
         uri: lb://delivery-service
         predicates:
