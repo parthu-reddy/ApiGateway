@@ -278,13 +278,50 @@ springdoc:
       url: /service-docs/event-tracking-service/v3/api-docs
 rbac:
   rules:
-    advertiser:
-    - /api/v1/advertisers
-    - /api/v1/campaigns
-    ROLE_RESTAURANT:
-    - /api/v1/advertisers
-    - /api/v1/campaigns
-    customer:
-    - /api/v1/ads
     authenticated:
+    - /api/v1/users
+    - /api/v1/internal/auth/sessions
+    - /api/v1/internal/auth/logout
+    - /api/v1/verification
+    customer:
+    - /api/v1/customers
+    - /api/v1/orders
+    - /api/v1/places
+    - /api/v1/payments
+    - /api/places
+    - /api/maps
+    - /api/config
+    - /api/v1/ledger
+    - /api/v1/chat
+    - /ws/chat
+    - /api/v1/tracking
+    - /api/v1/logistics/route
+    restaurant:
+    - /api/v1/restaurants
+    - /api/v1/brands
+    - /api/v1/outlets
+    - /api/v1/categories
     - /api/v1/logistics
+    - /api/v1/images
+    - /api/places
+    - /api/maps
+    - /api/config
+    - /api/v1/ledger
+    - /api/v1/chat
+    - /ws/chat
+    - /api/v1/campaigns
+    - /api/v1/advertisers
+    - /api/v1/wallets
+    delivery:
+    - /api/v1/images
+    - /api/v1/logistics
+    - /api/v1/delivery
+    - /api/delivery
+    - /api/logistics
+    - /api/fleet
+    - /api/places
+    - /api/maps
+    - /api/config
+    - /api/v1/ledger
+    - /api/v1/chat
+    - /ws/chat
