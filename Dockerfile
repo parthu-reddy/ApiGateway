@@ -1,5 +1,5 @@
 # Builder stage
-FROM eclipse-temurin:17-jre-jammy as builder
+FROM --platform=$BUILDPLATFORM eclipse-temurin:17-jre-jammy AS builder
 WORKDIR /builder
 COPY ApiGateway/target/*-SNAPSHOT.jar app.jar
 RUN java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
