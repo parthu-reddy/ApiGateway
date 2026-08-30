@@ -1,6 +1,0 @@
-[   11447ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:3001/api/v1/restaurants/nearby?lat=12.9716&lng=77.5946&radius=5000:0
-[   11448ms] [WARNING] Failed to fetch restaurants @ http://localhost:3001/assets/index-CuXCmEBp.js:925
-[   11450ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:3001/api/v1/customers/2f3478f7-6f98-4e9c-9534-fb3cb825e816/addresses:0
-[   11450ms] [WARNING] Failed to fetch addresses @ http://localhost:3001/assets/index-CuXCmEBp.js:925
-[   17484ms] [ERROR] Failed to fetch devices SyntaxError: Unexpected token ']', ..."","roles":]}}]}}]}}]"... is not valid JSON @ http://localhost:3001/assets/index-CuXCmEBp.js:346
-[ 5313292ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/v1/internal/auth/admin/otp?phoneNumber=9999888999&serviceName=CUSTOMER:0

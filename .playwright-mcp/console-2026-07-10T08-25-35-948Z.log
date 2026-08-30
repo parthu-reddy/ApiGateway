@@ -1,6 +1,0 @@
-[   24001ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/:0
-[   57282ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:3001/api/v1/restaurants/nearby?lat=12.9716&lng=77.5946&radius=5000:0
-[   57284ms] [WARNING] Failed to fetch restaurants @ http://localhost:3001/assets/index-C2UVvcuZ.js:925
-[   57306ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:3001/api/v1/customers/2f3478f7-6f98-4e9c-9534-fb3cb825e816/addresses:0
-[   57306ms] [WARNING] Failed to fetch addresses @ http://localhost:3001/assets/index-C2UVvcuZ.js:925
-[  235997ms] [ERROR] Failed to fetch devices SyntaxError: Unexpected token ']', ..."","roles":]}}]}}]}}]"... is not valid JSON @ http://localhost:3001/assets/index-C2UVvcuZ.js:346
