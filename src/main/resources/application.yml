@@ -133,7 +133,7 @@ spring:
         - Path=/olamaps/**
         filters:
         - RewritePath=/olamaps/(?<segment>.*), /${segment}
-        - AddRequestParameter=api_key, ${OLA_MAPS_API_KEY:}
+        - AddRequestParameter=api_key, ${OLA_MAPS_API_KEY:dummy_key}
       - id: maps-integration-api
         uri: lb://mapsintegration
         predicates:
