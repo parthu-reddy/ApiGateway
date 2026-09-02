@@ -90,32 +90,38 @@ jobs:
           
           MAX_RETRIES=5
           for i in $(seq 1 $MAX_RETRIES); do
-            git pull --rebase origin main || git pull origin main
-            git checkout -- .versions
-            
+            # Always start fresh from the remote
+            git fetch origin main
+            git reset --hard origin/main
+
             TAG_VAR=$(echo "api-gateway" | tr '[:lower:]' '[:upper:]' | tr '-' '_')_TAG
             if grep -q "^${TAG_VAR}=" .versions; then
               sed -i "s/^${TAG_VAR}=.*/${TAG_VAR}=${{ github.sha }}/g" .versions
             else
               echo "${TAG_VAR}=${{ github.sha }}" >> .versions
             fi
-            
-            git commit -am "Update ${TAG_VAR} with new image tag" || {
+
+            # Check if there are changes to commit
+            if git diff --quiet; then
               echo "No changes to commit"
-              exit 0
-            }
+              break
+            fi
+
+            git commit -am "Update ${TAG_VAR} with new image tag"
             
             if git push origin HEAD:main; then
               echo "Successfully updated .versions!"
-              exit 0
+              break
+            fi
+            
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "Failed to push after $MAX_RETRIES attempts."
+              exit 1
             fi
             
             echo "Push rejected due to race condition. Retrying ($i/$MAX_RETRIES)..."
             sleep $((1 + RANDOM % 5))
           done
-          
-          echo "Failed to push .versions after $MAX_RETRIES attempts"
-          exit 1
 
       - name: Trigger Contract Verification
         uses: peter-evans/repository-dispatch@v3
