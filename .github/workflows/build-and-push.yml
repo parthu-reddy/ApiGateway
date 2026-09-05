@@ -52,7 +52,7 @@ jobs:
           mvn -q -B install -f deps/FoodDeliveryCommonLibrary/pom.xml
 
       - name: Build Microservice
-        run: mvn -B clean package -DskipTests -f ApiGateway/pom.xml
+        run: mvn -B clean package -Pci-tests -f ApiGateway/pom.xml
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
