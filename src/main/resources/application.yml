@@ -67,16 +67,7 @@ spring:
         - name: CircuitBreaker
           args:
             name: identityServiceCircuitBreaker
-      - id: wallet-service
-        uri: lb://wallet-service
-        predicates:
-        - Path=/api/v1/wallets/**
-        filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 5
-            redis-rate-limiter.burstCapacity: 10
-            key-resolver: '#{@ipKeyResolver}'
+
       - id: reviews-service
         uri: lb://reviews-service
         predicates:
@@ -87,16 +78,26 @@ spring:
             redis-rate-limiter.replenishRate: 10
             redis-rate-limiter.burstCapacity: 20
             key-resolver: '#{@ipKeyResolver}'
-      - id: wallet-topup-route
+      - id: money-customer
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/money/customer/**
+      - id: money-restaurant
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/money/restaurant/**
+      - id: money-driver
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/money/driver/**
+      - id: money-advertiser
         uri: lb://wallet-service
         predicates:
-        - Path=/api/v1/advertisers/*/wallet/topups
-        filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 5
-            redis-rate-limiter.burstCapacity: 10
-            key-resolver: '#{@ipKeyResolver}'
+        - Path=/api/v1/money/advertiser/**
+      - id: ledger-statements
+        uri: lb://ledger-service
+        predicates:
+        - Path=/api/v1/ledger/statements/**, /api/v1/ledger/payouts/**
       - id: campaign-service
         uri: lb://campaign-service
         predicates:
@@ -287,7 +288,6 @@ rbac:
     - /api/v1/customers
     - /api/v1/orders
     - /api/v1/places
-    - /api/v1/payments
     - /api/places
     - /api/maps
     - /api/config
@@ -296,6 +296,7 @@ rbac:
     - /ws/chat
     - /api/v1/tracking
     - /api/v1/logistics/route
+    - /api/v1/money/customer
     restaurant:
     - /api/v1/restaurants
     - /api/v1/brands
@@ -311,7 +312,10 @@ rbac:
     - /ws/chat
     - /api/v1/campaigns
     - /api/v1/advertisers
-    - /api/v1/wallets
+    - /api/v1/money/restaurant
+    - /api/v1/money/advertiser
+    - /api/v1/ledger/statements
+    - /api/v1/ledger/payouts
     delivery:
     - /api/v1/images
     - /api/v1/logistics
@@ -325,3 +329,6 @@ rbac:
     - /api/v1/ledger
     - /api/v1/chat
     - /ws/chat
+    - /api/v1/money/driver
+    - /api/v1/ledger/statements
+    - /api/v1/ledger/payouts
