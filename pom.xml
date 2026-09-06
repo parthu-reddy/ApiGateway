@@ -5,9 +5,8 @@
         <groupId>com.fooddelivery</groupId>
         <artifactId>food-delivery-parent</artifactId>
         <version>1.0-SNAPSHOT</version>
-        <!-- Empty relativePath: resolve from the artifact repository, not a sibling
-             directory. This repo must build on its own, without the workspace. -->
-        <relativePath/>
+        
+        <relativePath />
     </parent>
 	<groupId>com.fooddelivery</groupId>
 	<artifactId>api-gateway</artifactId>
@@ -24,9 +23,7 @@
 
 
 
-		<!-- The shared identity signing. Safe here where common-library is not: this module pulls
-		     spring-context only, so it cannot put Spring MVC on a Spring Cloud Gateway classpath
-		     (GatewayClassPathWarningAutoConfiguration would refuse to start). -->
+		
 		<dependency>
 			<groupId>com.fooddelivery</groupId>
 			<artifactId>identity-signing</artifactId>
@@ -101,17 +98,17 @@
             <artifactId>logstash-logback-encoder</artifactId>
         </dependency>
     
-        <!-- Auto-generated OpenAPI specs -->
+        
         
         
 
     
-        <!-- Auto-generated OpenAPI specs -->
+        
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
         </dependency>
-</dependencies>
+<dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>1.3.0</version><scope>test</scope></dependency><dependency><groupId>com.fooddelivery</groupId><artifactId>common-library</artifactId><version>1.0-SNAPSHOT</version><type>test-jar</type><scope>test</scope></dependency></dependencies>
 	<build>
 		<plugins>
             
