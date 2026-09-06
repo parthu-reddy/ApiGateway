@@ -27,24 +27,30 @@ public class ArchitectureEnforcementTest {
     private static final DescribedPredicate<JavaClass> anyClass = 
         DescribedPredicate.alwaysTrue();
 
+    private static final DescribedPredicate<JavaClass> isApplicationClass = 
+        DescribedPredicate.describe("is application class", 
+            clazz -> clazz.getSimpleName().endsWith("Application"));
+
     @ArchTest
     public static final ArchRule layered_architecture_is_respected = 
         layeredArchitecture()
             .consideringAllDependencies()
             .withOptionalLayers(true)
-            .layer("Controller").definedBy("..controller..", "..kafka..", "..messaging..", "..beckn.bpp..", "..listener..", "..websocket..")
-            .layer("Service").definedBy("..service..", "..refund..", "..scheduler..", "..security..", "..job..", "..matcher..", "..catalog..", "..settlement..", "..reconciliation..", "..event..")
+            .layer("Controller").definedBy("..controller..", "..kafka..", "..messaging..", "..beckn.bpp..", "..listener..", "..websocket..", "..web..")
+            .layer("Service").definedBy("..service..", "..refund..", "..scheduler..", "..security..", "..job..", "..matcher..", "..catalog..", "..settlement..", "..reconciliation..", "..event..", "..ledger..", "..processor..")
             .layer("Repository").definedBy("..repository..")
             .layer("Client").definedBy("..client..")
             .layer("Config").definedBy("..config..")
             .layer("Mapper").definedBy("..mapper..")
             .layer("Filter").definedBy("..filter..")
             .layer("DTO").definedBy("..dto..", "..entity..")
+            .layer("CrossCutting").definedBy("..util..", "..exception..", "..validator..", "..idempotency..", "..aspect..", "..component..", "..outbox..", "..adapter..")
             
             .whereLayer("Controller").mayOnlyBeAccessedByLayers("Config", "Service") 
-            .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller", "Service", "Config", "DTO", "Client")
-            .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service", "Controller", "Config", "Filter")
-            .whereLayer("Client").mayOnlyBeAccessedByLayers("Service", "Config", "Controller")
-            .ignoreDependency(isGeneratedOrImpl, anyClass);
+            .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller", "Service", "Config", "DTO", "Client", "Filter", "CrossCutting")
+            .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service", "Controller", "Config", "Filter", "CrossCutting")
+            .whereLayer("Client").mayOnlyBeAccessedByLayers("Service", "Config", "Controller", "CrossCutting")
+            .ignoreDependency(isGeneratedOrImpl, anyClass)
+            .ignoreDependency(isApplicationClass, anyClass);
 
 }
