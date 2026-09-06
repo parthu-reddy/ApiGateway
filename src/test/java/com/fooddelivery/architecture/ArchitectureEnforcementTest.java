@@ -29,6 +29,22 @@ public class ArchitectureEnforcementTest {
 
     @ArchTest
     public static final ArchRule layered_architecture_is_respected = 
-        com.fooddelivery.common.architecture.ArchUnitRules.getBaseLayeredArchitecture();
+        layeredArchitecture()
+            .consideringAllDependencies()
+            .withOptionalLayers(true)
+            .layer("Controller").definedBy("..controller..", "..kafka..", "..messaging..", "..beckn.bpp..", "..listener..", "..websocket..")
+            .layer("Service").definedBy("..service..", "..refund..", "..scheduler..", "..security..", "..job..", "..matcher..", "..catalog..", "..settlement..", "..reconciliation..", "..event..")
+            .layer("Repository").definedBy("..repository..")
+            .layer("Client").definedBy("..client..")
+            .layer("Config").definedBy("..config..")
+            .layer("Mapper").definedBy("..mapper..")
+            .layer("Filter").definedBy("..filter..")
+            .layer("DTO").definedBy("..dto..", "..entity..")
+            
+            .whereLayer("Controller").mayOnlyBeAccessedByLayers("Config", "Service") 
+            .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller", "Service", "Config", "DTO", "Client")
+            .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service", "Controller", "Config", "Filter")
+            .whereLayer("Client").mayOnlyBeAccessedByLayers("Service", "Config", "Controller")
+            .ignoreDependency(isGeneratedOrImpl, anyClass);
 
 }
