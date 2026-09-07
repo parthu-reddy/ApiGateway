@@ -1,8 +1,8 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches: [ "main" ]
+  # push:
+    # branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -128,9 +128,9 @@ jobs:
             sleep $((1 + RANDOM % 5))
           done
 
-      - name: Trigger Contract Verification
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.CHECKOUT_TOKEN }}
-          repository: parthu-reddy/FoodDeliveryContracts
-          event-type: module-pushed
+#      - name: Trigger Contract Verification
+#        uses: peter-evans/repository-dispatch@v3
+#        with:
+#          token: ${{ secrets.CHECKOUT_TOKEN }}
+#          repository: parthu-reddy/FoodDeliveryContracts
+#          event-type: module-pushed
