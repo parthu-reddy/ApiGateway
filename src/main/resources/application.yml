@@ -17,7 +17,7 @@ spring:
       - id: admin-customer-routes
         uri: lb://customer-service
         predicates:
-        - Path=/api/v1/internal/admin/orders/**
+        - Path=/api/v1/internal/admin/orders/**, /api/v1/internal/admin/customers/**
         filters:
         - name: RequestRateLimiter
           args:
@@ -67,6 +67,16 @@ spring:
         - name: CircuitBreaker
           args:
             name: identityServiceCircuitBreaker
+      - id: admin-ledger-routes
+        uri: lb://ledger-service
+        predicates:
+        - Path=/api/v1/internal/admin/payouts/**, /api/v1/internal/admin/cash/**, /api/v1/internal/admin/ledger/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+            key-resolver: '#{@ipKeyResolver}'
 
       - id: reviews-service
         uri: lb://reviews-service
@@ -97,7 +107,7 @@ spring:
       - id: ledger-statements
         uri: lb://ledger-service
         predicates:
-        - Path=/api/v1/ledger/statements/**, /api/v1/ledger/payouts/**
+        - Path=/api/v1/ledger/statements/**, /api/v1/ledger/payouts/**, /api/v1/ledger/cash/**
       - id: campaign-service
         uri: lb://campaign-service
         predicates:
@@ -146,6 +156,72 @@ spring:
             redis-rate-limiter.replenishRate: 20
             redis-rate-limiter.burstCapacity: 40
             key-resolver: '#{@ipKeyResolver}'
+      # ---------------------------------------------------------------- public webhooks
+      # Razorpay, Cashfree and Vyapar POST here when a payment settles. GlobalJwtAuthFilter already
+      # treats /api/v1/webhooks/ as public and WebhookController verifies each provider's signature,
+      # but there was no route: every callback 404'd at the gateway, so no payment was ever
+      # confirmed from the gateway's side. Found 2026-09-09 auditing routes against service specs.
+      - id: payment-webhooks
+        uri: lb://payment-service
+        predicates:
+        - Path=/api/v1/webhooks/**
+
+      # ---------------------------------------------------------------- customer surface
+      # MUST precede restaurant-catalog. CustomerApplication is the customer-facing facade for
+      # these three: it calls restaurant-service over Feign and enriches the result (sponsored
+      # listings on /nearby, distances on /brands/**). Routing them to restaurant-service would
+      # return the raw upstream and silently drop both.
+      - id: customer-restaurant-facade
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/restaurants/nearby, /api/v1/restaurants/brands/**, /api/v1/restaurants/*/delivery-availability
+
+      - id: customer-orders
+        uri: lb://customer-service
+        predicates:
+        - Path=/api/v1/orders/**, /api/v1/customer/orders/**, /api/v1/customers/**
+
+      # ---------------------------------------------------------------- restaurant surface
+      - id: restaurant-catalog
+        uri: lb://restaurant-service
+        predicates:
+        - Path=/api/v1/restaurants/**, /api/v1/brands/**, /api/v1/categories/**, /api/v1/outlets/**, /api/v1/images/**
+
+      # ---------------------------------------------------------------- rider surface
+      # Both prefixes: DeliveryExecutiveApplication serves /api/v1/delivery/** and, natively,
+      # /api/delivery/** (profile, onboarding, verification, and the /api/delivery/tracking
+      # websocket). No RewritePath -- the service serves these paths as written.
+      - id: delivery-app
+        uri: lb://delivery-service
+        predicates:
+        - Path=/api/v1/delivery/**, /api/delivery/**
+
+      # ---------------------------------------------------------------- shared surfaces
+      - id: chat-service-routes
+        uri: lb://chat-service
+        predicates:
+        - Path=/api/v1/chat/**
+
+      - id: identity-users
+        uri: lb://identity-service
+        predicates:
+        - Path=/api/v1/users/**
+
+      # The payee-facing ledger reads that sit outside statements/payouts/cash. Guarded per-owner
+      # by MoneyAccessPolicy in LedgerController.
+      - id: ledger-payee-reads
+        uri: lb://ledger-service
+        predicates:
+        - Path=/api/v1/ledger/accounts/**, /api/v1/ledger/orders/**
+
+      # MapsIntegration serves /api/places/** as written, and that is what the generated client
+      # calls. The /api/v1/places/** route below rewrites into the same handlers; this one carries
+      # the shape actually in use.
+      - id: maps-places
+        uri: lb://mapsintegration
+        predicates:
+        - Path=/api/places/**
+
       - id: service-docs-customer
         uri: lb://customer-service
         predicates:
@@ -286,6 +362,10 @@ rbac:
     - /api/v1/verification
     customer:
     - /api/v1/customers
+    # Singular: CustomerOrderController serves /api/v1/customer/orders/**, which the plural prefix
+    # above does not match -- rbac matches on `equals` or `startsWith(prefix + "/")`. The customer
+    # refund-request call was routed and served but refused here. Found 2026-09-09.
+    - /api/v1/customer
     - /api/v1/orders
     - /api/v1/places
     - /api/places
