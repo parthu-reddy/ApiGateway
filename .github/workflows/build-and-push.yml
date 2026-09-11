@@ -67,15 +67,12 @@ jobs:
           username: ${{ secrets.OCIR_USERNAME }}
           password: ${{ secrets.OCIR_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ApiGateway/Dockerfile
-          push: true
-          tags: hyd.ocir.io/axekmbadoczl/food-delivery/api-gateway:${{ github.sha }}
-          platforms: linux/arm64
-
+      - name: Trigger Contract Verification
+#        uses: peter-evans/repository-dispatch@v3
+#        with:
+#          token: ${{ secrets.CHECKOUT_TOKEN }}
+#          repository: parthu-reddy/FoodDeliveryContracts
+#          event-type: module-pushed
       - name: Checkout Deployment Repo
         uses: actions/checkout@v5
         with:
@@ -84,7 +81,16 @@ jobs:
           token: ${{ secrets.CHECKOUT_TOKEN }}
 
       - name: Clean up old Docker images
-        run: python3 deps/Deployment/retention.py --apply --service api-gateway
+        run: python3 deps/Deployment/retention.py --apply --delete-all --service api-gateway
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ApiGateway/Dockerfile
+          push: true
+          tags: hyd.ocir.io/axekmbadoczl/food-delivery/api-gateway:${{ github.sha }}
+          platforms: linux/arm64
 
       - name: Update .versions file
         working-directory: deps/Deployment
@@ -128,9 +134,4 @@ jobs:
             sleep $((1 + RANDOM % 5))
           done
 
-#      - name: Trigger Contract Verification
-#        uses: peter-evans/repository-dispatch@v3
-#        with:
-#          token: ${{ secrets.CHECKOUT_TOKEN }}
-#          repository: parthu-reddy/FoodDeliveryContracts
-#          event-type: module-pushed
+#
