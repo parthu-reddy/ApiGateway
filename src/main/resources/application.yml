@@ -7,12 +7,14 @@ spring:
     config:
       fail-fast: true
     gateway:
-      default-filters:
-      - name: RequestRateLimiter
-        args:
-          redis-rate-limiter.replenishRate: 20
-          redis-rate-limiter.burstCapacity: 40
-          key-resolver: '#{@ipKeyResolver}'
+      # Rate limiting is declared per route below, NOT here. Spring Cloud Gateway ADDS every
+      # default-filter to a route's chain instead of letting the route override it, so a route
+      # asking for a higher rate still got the stricter default and the two buckets both
+      # charged. That capped the Ola tile proxy at 40 burst and silently defeated every route that
+      # asked for more than the default -- event-tracking-service (100/200) and bidding-engine
+      # (50/100) were both getting 40. Verified against /actuator/gateway/routes on 2026-09-10.
+      # Any new route MUST carry its own RequestRateLimiter; validate_core_services.py check
+      # GW-RATELIMIT enforces that.
       routes:
       - id: admin-customer-routes
         uri: lb://customer-service
@@ -92,22 +94,52 @@ spring:
         uri: lb://customer-service
         predicates:
         - Path=/api/v1/money/customer/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: money-restaurant
         uri: lb://customer-service
         predicates:
         - Path=/api/v1/money/restaurant/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: money-driver
         uri: lb://customer-service
         predicates:
         - Path=/api/v1/money/driver/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: money-advertiser
         uri: lb://wallet-service
         predicates:
         - Path=/api/v1/money/advertiser/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: ledger-statements
         uri: lb://ledger-service
         predicates:
         - Path=/api/v1/ledger/statements/**, /api/v1/ledger/payouts/**, /api/v1/ledger/cash/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: campaign-service
         uri: lb://campaign-service
         predicates:
@@ -143,6 +175,18 @@ spring:
         predicates:
         - Path=/olamaps/**
         filters:
+        # Map tiles, not API calls. A cold MapLibre load of a 1440x820 map measured 33 requests with
+        # 31 of them inside one second (style, 3 TileJSONs, sprite, 3 glyph ranges, and 12 vector tiles
+        # per source), and panning immediately asks for more. Against the old shared 40-token bucket a
+        # single map consumed ~78% of it in one second, leaving almost nothing for the page's own API
+        # calls -- and MapLibre never retries a tile the gateway rejects, so a 429 leaves a permanently
+        # blank square. Ola serves tiles with max-age=3600, so a warm browser costs nothing and this
+        # bucket only has to absorb the cold load. Measured 2026-09-10.
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 100
+            redis-rate-limiter.burstCapacity: 400
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/olamaps/(?<segment>.*), /${segment}
         - AddRequestParameter=api_key, ${OLA_MAPS_API_KEY:dummy_key}
       - id: maps-integration-api
@@ -171,10 +215,22 @@ spring:
       # these three: it calls restaurant-service over Feign and enriches the result (sponsored
       # listings on /nearby, distances on /brands/**). Routing them to restaurant-service would
       # return the raw upstream and silently drop both.
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: customer-restaurant-facade
         uri: lb://customer-service
         predicates:
         - Path=/api/v1/restaurants/nearby, /api/v1/restaurants/brands/**, /api/v1/restaurants/*/delivery-availability
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
 
       - id: customer-orders
         uri: lb://customer-service
@@ -182,6 +238,12 @@ spring:
         - Path=/api/v1/orders/**, /api/v1/customer/orders/**, /api/v1/customers/**
 
       # ---------------------------------------------------------------- restaurant surface
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: restaurant-catalog
         uri: lb://restaurant-service
         predicates:
@@ -191,16 +253,34 @@ spring:
       # Both prefixes: DeliveryExecutiveApplication serves /api/v1/delivery/** and, natively,
       # /api/delivery/** (profile, onboarding, verification, and the /api/delivery/tracking
       # websocket). No RewritePath -- the service serves these paths as written.
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: delivery-app
         uri: lb://delivery-service
         predicates:
         - Path=/api/v1/delivery/**, /api/delivery/**
 
       # ---------------------------------------------------------------- shared surfaces
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: chat-service-routes
         uri: lb://chat-service
         predicates:
         - Path=/api/v1/chat/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
 
       - id: identity-users
         uri: lb://identity-service
@@ -209,6 +289,12 @@ spring:
 
       # The payee-facing ledger reads that sit outside statements/payouts/cash. Guarded per-owner
       # by MoneyAccessPolicy in LedgerController.
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: ledger-payee-reads
         uri: lb://ledger-service
         predicates:
@@ -217,106 +303,198 @@ spring:
       # MapsIntegration serves /api/places/** as written, and that is what the generated client
       # calls. The /api/v1/places/** route below rewrites into the same handlers; this one carries
       # the shape actually in use.
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
       - id: maps-places
         uri: lb://mapsintegration
         predicates:
         - Path=/api/places/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
 
       - id: service-docs-customer
         uri: lb://customer-service
         predicates:
         - Path=/service-docs/customer-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/customer-service/(.*), /$1
       - id: service-docs-restaurant
         uri: lb://restaurant-service
         predicates:
         - Path=/service-docs/restaurant-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/restaurant-service/(.*), /$1
       - id: service-docs-delivery
         uri: lb://delivery-service
         predicates:
         - Path=/service-docs/delivery-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/delivery-service/(.*), /$1
       - id: service-docs-identity
         uri: lb://identity-service
         predicates:
         - Path=/service-docs/identity-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/identity-service/(.*), /$1
       - id: service-docs-payment
         uri: lb://payment-service
         predicates:
         - Path=/service-docs/payment-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/payment-service/(.*), /$1
       - id: service-docs-maps
         uri: lb://mapsintegration
         predicates:
         - Path=/service-docs/mapsintegration/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/mapsintegration/(.*), /$1
       - id: service-docs-notification
         uri: lb://notification-service
         predicates:
         - Path=/service-docs/notification-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/notification-service/(.*), /$1
       - id: service-docs-ledger
         uri: lb://ledger-service
         predicates:
         - Path=/service-docs/ledger-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/ledger-service/(.*), /$1
       - id: service-docs-chat
         uri: lb://chat-service
         predicates:
         - Path=/service-docs/chat-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/chat-service/(.*), /$1
       - id: service-docs-ondc
         uri: lb://ondc-integration-service
         predicates:
         - Path=/service-docs/ondc-integration-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/ondc-integration-service/(.*), /$1
       - id: service-docs-wallet
         uri: lb://wallet-service
         predicates:
         - Path=/service-docs/wallet-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/wallet-service/(.*), /$1
       - id: service-docs-campaign
         uri: lb://campaign-service
         predicates:
         - Path=/service-docs/campaign-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/campaign-service/(.*), /$1
       - id: service-docs-bidding
         uri: lb://bidding-engine
         predicates:
         - Path=/service-docs/bidding-engine/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/bidding-engine/(.*), /$1
       - id: service-docs-gov-id
         uri: lb://government-id-validation-service
         predicates:
         - Path=/service-docs/government-id-validation-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/government-id-validation-service/(.*), /$1
       - id: service-docs-reviews
         uri: lb://reviews-service
         predicates:
         - Path=/service-docs/reviews-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/reviews-service/(.*), /$1
       - id: service-docs-event
         uri: lb://event-tracking-service
         predicates:
         - Path=/service-docs/event-tracking-service/**
         filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/event-tracking-service/(.*), /$1
 springdoc:
   swagger-ui:

@@ -43,20 +43,17 @@ class EndpointAuthorizationCoverageTest {
 
     /**
      * Every endpoint the gateway serves directly, each with the {@code GlobalJwtAuthFilter} rule that
-     * gates it. Verified against its public-path list on 2026-08-28.
+     * gates it. Verified against its public-path list on 2026-09-10.
      *
      * <ul>
      *   <li>{@code IndexController#index} -- "/" is explicitly public, so the SPA shell loads before
      *       sign-in.</li>
-     *   <li>{@code UiConfigController#getUiConfig} -- /api/config/ui-config is NOT in the public list
-     *       (only /api/config/maps-key is), so a valid JWT is required.</li>
      *   <li>{@code FrontendLogController#logFrontendEvents} -- /api/logs is not public either, so it
      *       is authenticated. Validator check I-36b asserts exactly this.</li>
      * </ul>
      */
     private static final Set<String> REVIEWED_ENDPOINTS = Set.of(
             "IndexController#index",
-            "UiConfigController#getUiConfig",
             "FrontendLogController#logFrontendEvents");
 
     private static final Set<String> MAPPINGS = Set.of(
