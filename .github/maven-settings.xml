@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven settings for CI only. Never used by a local build.
+
+  GitHub Packages requires authentication even to read a public package, so wiring these repositories
+  into a pom would make every developer's Maven consult an authenticated remote for SNAPSHOT updates
+  and break builds on any machine without a token. Keeping them here means local builds keep
+  resolving from ~/.m2 exactly as before.
+
+  The credential is PACKAGES_TOKEN, a CLASSIC token. CHECKOUT_TOKEN is fine-grained, and fine-grained
+  tokens cannot authenticate to the Maven registry at all. GitHub supports only classic tokens
+  there. Using the wrong one fails with a 401 that reads like a missing scope.
+
+  Each <repository> id must have a <server> of the same id or the request goes out unauthenticated.
+
+  GitHub Packages Maven is per repository; there is no owner-wide endpoint, which is why there are
+  three entries rather than one.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+
+  <servers>
+    <server>
+      <id>github-parent</id>
+      <username>parthu-reddy</username>
+      <password>${env.PACKAGES_TOKEN}</password>
+    </server>
+    <server>
+      <id>github-identity-signing</id>
+      <username>parthu-reddy</username>
+      <password>${env.PACKAGES_TOKEN}</password>
+    </server>
+    <server>
+      <id>github-common-library</id>
+      <username>parthu-reddy</username>
+      <password>${env.PACKAGES_TOKEN}</password>
+    </server>
+  </servers>
+
+  <profiles>
+    <profile>
+      <id>github-packages</id>
+      <repositories>
+        <repository>
+          <id>github-parent</id>
+          <url>https://maven.pkg.github.com/parthu-reddy/FoodDeliveryParentPOM</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </repository>
+        <repository>
+          <id>github-identity-signing</id>
+          <url>https://maven.pkg.github.com/parthu-reddy/IdentitySigning</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </repository>
+        <repository>
+          <id>github-common-library</id>
+          <url>https://maven.pkg.github.com/parthu-reddy/FoodDeliveryCommonLibrary</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>central</id>
+          <url>https://repo.maven.apache.org/maven2</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+
+  <activeProfiles>
+    <activeProfile>github-packages</activeProfile>
+  </activeProfiles>
+</settings>

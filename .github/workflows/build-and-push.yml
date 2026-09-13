@@ -14,27 +14,6 @@ jobs:
         with:
           path: ApiGateway
 
-      - name: Checkout Parent POM
-        uses: actions/checkout@v5
-        with:
-          repository: parthu-reddy/FoodDeliveryParentPOM
-          path: deps/FoodDeliveryParentPOM
-          token: ${{ secrets.CHECKOUT_TOKEN }}
-          
-      - name: Checkout IdentitySigning
-        uses: actions/checkout@v5
-        with:
-          repository: parthu-reddy/IdentitySigning
-          path: deps/IdentitySigning
-          token: ${{ secrets.CHECKOUT_TOKEN }}
-
-      - name: Checkout CommonLibrary
-        uses: actions/checkout@v5
-        with:
-          repository: parthu-reddy/FoodDeliveryCommonLibrary
-          path: deps/FoodDeliveryCommonLibrary
-          token: ${{ secrets.CHECKOUT_TOKEN }}
-
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -42,17 +21,12 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Install Shared Libraries
-        run: |
-          mvn -q -B -N install -f deps/FoodDeliveryParentPOM/pom.xml
-          mvn -q -B install -f deps/IdentitySigning/pom.xml
-          
-          # Create dummy directory for typescript-generator-maven-plugin in CommonLibrary
-          mkdir -p deps/FoodDeliveryAppUI/src/types
-          mvn -q -B install -f deps/FoodDeliveryCommonLibrary/pom.xml
-
       - name: Build Microservice
-        run: mvn -B clean package -Pci-tests -f ApiGateway/pom.xml
+        env:
+          # Classic token. The shared libraries come from GitHub Packages now
+          # instead of being rebuilt from source in this job.
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: mvn -B clean package -Pci-tests -s ApiGateway/.github/maven-settings.xml -f ApiGateway/pom.xml
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
