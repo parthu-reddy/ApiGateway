@@ -41,7 +41,11 @@ jobs:
           username: ${{ secrets.OCIR_USERNAME }}
           password: ${{ secrets.OCIR_TOKEN }}
 
-      - name: Trigger Contract Verification
+      # Dead step: the body below was commented out, which left a step with a name and
+      # neither `run` nor `uses`. GitHub rejects the entire workflow for that, so every
+      # service build has been unrunnable (422 at dispatch) rather than merely skipping
+      # this. Commented out with its body until the dispatch is wanted again.
+      # - name: Trigger Contract Verification
 #        uses: peter-evans/repository-dispatch@v3
 #        with:
 #          token: ${{ secrets.CHECKOUT_TOKEN }}
