@@ -86,7 +86,7 @@ spring:
         # The admin prefix rides this route too. Mounting it under /api/v1/internal/admin/ is what
         # keeps GlobalJwtAuthFilter's internal-path block from rejecting it -- that filter carves
         # out exactly that prefix and nothing else under /api/v1/internal/.
-        - Path=/api/v1/reviews/**, /api/v1/internal/admin/reviews/**
+        - Path=/api/v1/reviews/**, /api/v1/reviews, /api/v1/internal/admin/reviews/**
         filters:
         - name: RequestRateLimiter
           args:
