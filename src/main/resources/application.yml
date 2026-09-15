@@ -284,6 +284,16 @@ spring:
             redis-rate-limiter.replenishRate: 20
             redis-rate-limiter.burstCapacity: 40
             key-resolver: '#{@ipKeyResolver}'
+      - id: chat-service-ws
+        uri: lb:ws://chat-service
+        predicates:
+        - Path=/ws/chat/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            key-resolver: '#{@ipKeyResolver}'
 
       - id: identity-users
         uri: lb://identity-service
