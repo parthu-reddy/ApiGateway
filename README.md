@@ -13,3 +13,4 @@ The ApiGateway is the single entry point for all external client requests into t
 - **Authentication**: Validates incoming JWT tokens using `GlobalJwtAuthFilter`.
 - **Context Propagation**: Strips raw JWTs and injects `X-User-Id`, `X-User-Roles`, and `X-User-Phone` headers into downstream requests.
 - **Security**: Blocks external access to internal APIs (e.g., paths matching `/api/*/internal/**`).
+
