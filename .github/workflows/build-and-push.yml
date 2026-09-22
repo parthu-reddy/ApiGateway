@@ -70,7 +70,7 @@ jobs:
           tags: hyd.ocir.io/axekmbadoczl/food-delivery/api-gateway:${{ github.sha }}
           platforms: linux/arm64
 
-      - name: Update .versions file
+      - name: Update deployment env file
         working-directory: deps/Deployment
         run: |
           git config user.name "github-actions[bot]"
@@ -82,22 +82,19 @@ jobs:
             git pull --rebase origin main
 
             TAG_VAR=$(echo "api-gateway" | tr '[:lower:]' '[:upper:]' | tr '-' '_')_TAG
-            if grep -q "^${TAG_VAR}=" .versions; then
-              sed -i "s/^${TAG_VAR}=.*/${TAG_VAR}=${{ github.sha }}/g" .versions
-            else
-              echo "${TAG_VAR}=${{ github.sha }}" >> .versions
-            fi
+            mkdir -p env_deployments/dev
+            echo "${TAG_VAR}=${{ github.sha }}" > env_deployments/dev/api-gateway.env
+            git add env_deployments/dev/api-gateway.env
 
             # Check if there are changes to commit
-            if git diff --quiet; then
+            if git diff --cached --quiet; then
               echo "No changes to commit"
               break
             fi
-
-            git commit -am "Update ${TAG_VAR} with new image tag"
+            git commit -m "Update ${TAG_VAR} with new image tag"
             
             if git push origin HEAD:main; then
-              echo "Successfully updated .versions!"
+              echo "Successfully updated deployment env file!"
               break
             fi
             
