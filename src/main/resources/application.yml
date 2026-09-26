@@ -146,7 +146,7 @@ spring:
       - id: campaign-service
         uri: lb://campaign-service
         predicates:
-        - Path=/api/v1/advertisers/**,/api/v1/campaigns/**
+        - Path=/api/v1/advertisers/**
         filters:
         - name: RequestRateLimiter
           args:
@@ -583,7 +583,6 @@ rbac:
     - /api/v1/ledger
     - /api/v1/chat
     - /ws/chat
-    - /api/v1/campaigns
     - /api/v1/advertisers
     - /api/v1/money/restaurant
     - /api/v1/money/advertiser
