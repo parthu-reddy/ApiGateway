@@ -178,6 +178,10 @@ spring:
         predicates:
         - Path=/olamaps/**
         filters:
+        # Spring Cloud Gateway forwards the incoming Host header by default. In production,
+        # nginx passes the browser's Host (e.g. 140.245.234.137) which Ola Maps rejects
+        # with 403. This filter ensures api.olamaps.io sees its own hostname.
+        - SetRequestHostHeader=api.olamaps.io
         # Map tiles, not API calls. A cold MapLibre load of a 1440x820 map measured 33 requests with
         # 31 of them inside one second (style, 3 TileJSONs, sprite, 3 glyph ranges, and 12 vector tiles
         # per source), and panning immediately asks for more. Against the old shared 40-token bucket a
