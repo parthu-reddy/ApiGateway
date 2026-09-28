@@ -572,7 +572,8 @@ rbac:
     - /api/v1/tracking
     - /api/v1/logistics/route
     - /api/v1/money/customer
-    # The customer writes reviews and reads restaurant/product ones.
+    # ReviewsService verifies the selected customer role and CustomerApplication authorizes each
+    # exact order target. Customer-private received feedback remains scoped to the signed-in user.
     - /api/v1/reviews
     restaurant:
     - /api/v1/restaurants
@@ -592,8 +593,8 @@ rbac:
     - /api/v1/money/advertiser
     - /api/v1/ledger/statements
     - /api/v1/ledger/payouts
-    # Read-only in practice: an owner sees their outlet's reviews. Writing is refused by
-    # ReviewController's hasRole('CUSTOMER').
+    # ReviewsService verifies the selected owner role; CustomerApplication confirms order
+    # participation, while outlet ownership is checked by RestaurantApplication.
     - /api/v1/reviews
     delivery:
     - /api/v1/images
@@ -611,6 +612,6 @@ rbac:
     - /api/v1/money/driver
     - /api/v1/ledger/statements
     - /api/v1/ledger/payouts
-    # A driver reads their own rating. ReviewAccessPolicy restricts EntityType.DRIVER to the driver
-    # themself, so reaching the route is not the same as reading someone else's.
+    # ReviewsService verifies the selected delivery role and restricts private driver feedback to
+    # the recipient. Order writes are checked against the assigned rider by CustomerApplication.
     - /api/v1/reviews
