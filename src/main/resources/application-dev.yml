@@ -1,0 +1,4 @@
+gateway:
+  rate-limit:
+    replenish-rate: 1000
+    burst-capacity: 10000
