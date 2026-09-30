@@ -59,7 +59,8 @@ spring:
       - id: admin-identity-routes
         uri: lb://identity-service
         predicates:
-        - Path=/api/v1/internal/admin/users/**,/api/v1/internal/users/**,/api/v1/internal/auth/**
+        - Path=/api/v1/internal/admin/users/**,/api/v1/internal/users/**,/api/v1/internal/auth/**,
+          /api/v1/internal/e2e/auth/**
         filters:
         - name: RequestRateLimiter
           args:

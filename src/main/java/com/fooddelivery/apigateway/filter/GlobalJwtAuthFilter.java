@@ -1,5 +1,7 @@
 package com.fooddelivery.apigateway.filter;
 
+import com.fooddelivery.apigateway.security.e2e.E2eOtpRunnerAccessFilter;
+import com.fooddelivery.apigateway.security.dev.DevOtpAccessFilter;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,7 +63,11 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     private PublicKey publicKey;
     private io.jsonwebtoken.JwtParser jwtParser;
 
-    private final Cache<String, Boolean> blacklistCache = Caffeine.newBuilder()
+    /**
+     * Only revoked sessions are cached. Caching a negative Redis lookup leaves a revocation window
+     * in which a just-suspended user can keep using an otherwise valid JWT.
+     */
+    private final Cache<String, Boolean> blacklistedSessionCache = Caffeine.newBuilder()
             .expireAfterWrite(30, TimeUnit.SECONDS)
             .maximumSize(10000)
             .build();
@@ -107,7 +113,14 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         
         final String finalFingerprint = derivedFingerprint;
 
-        // Strip sensitive internal headers to prevent spoofing from external clients
+        String path = exchange.getRequest().getURI().getPath();
+        boolean isE2eOtpLookup = E2eOtpRunnerAccessFilter.isOtpLookupPath(path);
+        boolean e2eRunnerValidated = E2eOtpRunnerAccessFilter.isValidated(exchange);
+        boolean isDevOtpLookup = DevOtpAccessFilter.isOtpLookupPath(path);
+
+        // Strip sensitive internal headers to prevent spoofing from external clients. The runner
+        // credential is retained only for a request already admitted by the e2e-only filter, so
+        // IdentityService can enforce the same dedicated secret on its direct port as well.
         ServerWebExchange sanitizedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
                         .headers(headers -> {
@@ -118,11 +131,31 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                             headers.remove("X-Client-Fingerprint");
                             headers.remove("X-Identity-Signature");
                             headers.remove("X-Issued-At");
+                            if (!isE2eOtpLookup || !e2eRunnerValidated) {
+                                headers.remove(E2eOtpRunnerAccessFilter.RUNNER_SECRET_HEADER);
+                            }
                         })
                         .build())
                 .build();
 
-        String path = sanitizedExchange.getRequest().getURI().getPath();
+        if (isE2eOtpLookup) {
+            if (!e2eRunnerValidated || sanitizedExchange.getRequest().getMethod() != org.springframework.http.HttpMethod.GET) {
+                sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                return sanitizedExchange.getResponse().setComplete();
+            }
+            return chain.filter(sanitizedExchange);
+        }
+
+        // The legacy Dev route is admitted only by its enabled Dev filter, before internal
+        // signatures or normal public-route exceptions can bypass its deployment guard.
+        if (isDevOtpLookup) {
+            if (!DevOtpAccessFilter.isValidated(exchange)
+                    || sanitizedExchange.getRequest().getMethod() != org.springframework.http.HttpMethod.GET) {
+                sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                return sanitizedExchange.getResponse().setComplete();
+            }
+            return chain.filter(sanitizedExchange);
+        }
         
         // 1. Check for valid internal service-to-service IdentityToken
         String incUserId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
@@ -153,7 +186,6 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             if (!(path.startsWith("/api/v1/internal/admin/") ||
                   path.equals("/api/v1/internal/auth/initiate") || 
                   path.equals("/api/v1/internal/auth/verify") || 
-                  path.equals("/api/v1/internal/auth/admin/otp") ||
                   path.equals("/api/v1/internal/auth/logout") ||
                   path.equals("/api/v1/internal/auth/sessions") ||
                   path.startsWith("/api/v1/internal/auth/sessions/"))) {
@@ -165,7 +197,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         
         boolean isPublic = false;
         // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
-        if (path.equals("/") || path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/admin/otp") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/") || path.startsWith("/olamaps/")) {
+        if (path.equals("/") || path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/") || path.startsWith("/olamaps/")) {
             isPublic = true;
         }
         
@@ -202,6 +234,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 String userId = claims.getSubject();
                 String phone = claims.get("phone", String.class);
                 String sessionId = claims.get("sessionId", String.class);
+                if (sessionId == null || sessionId.isBlank()) {
+                    return isPublic ? chain.filter(sanitizedExchange) : handleUnauthorized(sanitizedExchange);
+                }
                 
                 @SuppressWarnings("unchecked")
                 List<String> rolesList = claims.get("roles", List.class);
@@ -216,20 +251,22 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
                 long issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().getTime() : 0L;
 
-                Boolean isBlacklistedLocal = blacklistCache.getIfPresent(sessionId);
+                Boolean isBlacklistedLocal = blacklistedSessionCache.getIfPresent(sessionId);
                 if (Boolean.TRUE.equals(isBlacklistedLocal)) {
                     return handleUnauthorized(sanitizedExchange);
-                } else if (Boolean.FALSE.equals(isBlacklistedLocal)) {
-                    return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint, issuedAt);
                 }
 
                 return redisTemplate.hasKey("BLACKLIST:SESSION:" + sessionId)
                         .flatMap(isBlacklisted -> {
-                            blacklistCache.put(sessionId, isBlacklisted);
                             if (Boolean.TRUE.equals(isBlacklisted)) {
+                                blacklistedSessionCache.put(sessionId, true);
                                 return handleUnauthorized(sanitizedExchange);
                             }
                             return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint, issuedAt);
+                        })
+                        .onErrorResume(error -> {
+                            log.warn("Unable to check session revocation state; denying request", error);
+                            return handleUnauthorized(sanitizedExchange);
                         });
             } catch (Exception e) {
                 if (isPublic) {
