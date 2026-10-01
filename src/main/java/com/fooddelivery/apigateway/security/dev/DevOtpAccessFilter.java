@@ -12,7 +12,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Admits only the Dev Autofill Code route when enabled in Dev and never alongside prod.
- * IdentityService independently restricts the requested account and portal to its seeded policy.
+ * IdentityService validates the phone format and retains a phone allowlist only for administrators.
  * The following JWT filter requires this server-owned attribute before routing the lookup.
  */
 @Component
