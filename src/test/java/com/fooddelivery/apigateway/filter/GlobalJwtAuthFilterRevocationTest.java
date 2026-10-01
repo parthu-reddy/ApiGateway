@@ -58,6 +58,23 @@ class GlobalJwtAuthFilterRevocationTest {
     }
 
     @Test
+    void explicitRegistrationCanReachIdentityWithoutAnExistingSession() {
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/internal/auth/register")
+                .header("X-Calling-Service", "RESTAURANT").build());
+        filter.filter(exchange, this::passThrough).block();
+        assertEquals(1, passedToChain.get());
+        assertNull(exchange.getResponse().getStatusCode());
+    }
+
+    @Test
+    void registrationDoesNotExposeOtherInternalRoutes() {
+        var exchange = exchange("/api/v1/internal/auth/register/admin", null);
+        filter.filter(exchange, this::passThrough).block();
+        assertEquals(HttpStatus.FORBIDDEN, exchange.getResponse().getStatusCode());
+        assertEquals(0, passedToChain.get());
+    }
+
+    @Test
     void removedDevOtpEndpointIsRejectedBeforeItReachesIdentityService() {
         MockServerWebExchange exchange = exchange("/api/v1/internal/auth/admin/otp", null);
 
