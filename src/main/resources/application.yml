@@ -265,7 +265,7 @@ spring:
       - id: customer-orders
         uri: lb://customer-service
         predicates:
-        - Path=/api/v1/orders/**,/api/v1/customer/orders/**,/api/v1/customers/**
+        - Path=/api/v1/orders/**,/api/v1/customers/**
 
       # ---------------------------------------------------------------- restaurant surface
         filters:
@@ -580,10 +580,6 @@ rbac:
     - /api/v1/verification
     customer:
     - /api/v1/customers
-    # Singular: CustomerOrderController serves /api/v1/customer/orders/**, which the plural prefix
-    # above does not match -- rbac matches on `equals` or `startsWith(prefix + "/")`. The customer
-    # refund-request call was routed and served but refused here. Found 2026-09-09.
-    - /api/v1/customer
     - /api/v1/orders
     - /api/v1/places
     - /api/places
