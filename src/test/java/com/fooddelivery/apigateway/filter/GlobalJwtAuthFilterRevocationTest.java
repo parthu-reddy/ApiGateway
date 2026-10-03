@@ -74,6 +74,19 @@ class GlobalJwtAuthFilterRevocationTest {
         assertEquals(0, passedToChain.get());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={
+        "/api/v1/internal/organisations/22222222-2222-2222-2222-222222222222/members",
+        "/api/v1/internal/organisations/22222222-2222-2222-2222-222222222222/members/11111111-1111-1111-1111-111111111111",
+        "/api/v1/internal/users/11111111-1111-1111-1111-111111111111/organisations"
+    })
+    void organisationInternalRoutesRejectExternalTrafficEvenWithValidCustomerToken(String path) {
+        var exchange=exchange(path,token("session-org"));
+        filter.filter(exchange,this::passThrough).block();
+        assertEquals(HttpStatus.FORBIDDEN,exchange.getResponse().getStatusCode());
+        assertEquals(0,passedToChain.get());
+    }
+
     @Test
     void removedDevOtpEndpointIsRejectedBeforeItReachesIdentityService() {
         MockServerWebExchange exchange = exchange("/api/v1/internal/auth/admin/otp", null);
