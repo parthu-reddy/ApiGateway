@@ -26,9 +26,19 @@ class OrganisationGatewayRoutesTest {
             found=true;
         }
         assertTrue(found,"Identity route must exist");
+        boolean restaurantRoute=false;
+        for(int i=0;env.getProperty("spring.cloud.gateway.routes["+i+"].id")!=null;i++){
+            if(!"restaurant-service".equals(env.getProperty("spring.cloud.gateway.routes["+i+"].id"))){continue;}
+            String paths=env.getProperty("spring.cloud.gateway.routes["+i+"].predicates[0]");
+            assertTrue(paths.contains("/api/v1/internal/restaurants/**"), "Internal paths must reach the rejecting security filter");
+            restaurantRoute=true;
+        }
+        assertTrue(restaurantRoute,"Restaurant route must exist");
         for(String role:List.of("authenticated","customer","restaurant","delivery","admin")){
             var rules=Binder.get(env).bind("rbac.rules."+role,Bindable.listOf(String.class)).orElse(List.of());
-            for(String rule:rules){assertFalse("/api/v1/internal/organisations/x/members".startsWith(rule),role+": "+rule);assertFalse("/api/v1/internal/users/x/organisations".startsWith(rule),role+": "+rule);}
+            for(String rule:rules){assertFalse("/api/v1/internal/organisations/x/members".startsWith(rule),role+": "+rule);assertFalse("/api/v1/internal/users/x/organisations".startsWith(rule),role+": "+rule);
+                assertFalse("/api/v1/internal/restaurants/users/x/outlets".startsWith(rule),role+": "+rule);
+                assertFalse("/api/v1/internal/restaurants/outlets/x/organisation".startsWith(rule),role+": "+rule);}
         }
     }
 
