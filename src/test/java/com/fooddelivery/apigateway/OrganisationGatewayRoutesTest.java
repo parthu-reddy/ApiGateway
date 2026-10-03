@@ -31,4 +31,29 @@ class OrganisationGatewayRoutesTest {
             for(String rule:rules){assertFalse("/api/v1/internal/organisations/x/members".startsWith(rule),role+": "+rule);assertFalse("/api/v1/internal/users/x/organisations".startsWith(rule),role+": "+rule);}
         }
     }
+
+    @Test void deployedCorsAllowsOrganisationPatchAndKeepsOriginRestrictions() throws Exception {
+        var env=new StandardEnvironment();
+        var resource=new FileSystemResource("../Deployment/api-gateway.yml");
+        assertTrue(resource.exists(), "Assembled deployment config is required");
+        for(var source:new YamlPropertySourceLoader().load("deployment",resource)){env.getPropertySources().addFirst(source);}
+        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("origins",Map.of("ALLOWED_ORIGINS","https://ui.test")));
+        var properties=Binder.get(env).bind("spring.cloud.gateway.globalcors",
+                Bindable.of(org.springframework.cloud.gateway.config.GlobalCorsProperties.class)).orElseThrow(IllegalStateException::new);
+        var cors=properties.getCorsConfigurations().get("/**");assertNotNull(cors);
+        for(boolean preflight:List.of(false,true)) {
+            var request=preflight
+                ? org.springframework.mock.http.server.reactive.MockServerHttpRequest.options("https://gateway.test/api/v1/organisations/x/members/y")
+                    .header("Access-Control-Request-Method","PATCH")
+                : org.springframework.mock.http.server.reactive.MockServerHttpRequest.patch("https://gateway.test/api/v1/organisations/x/members/y");
+            var exchange=org.springframework.mock.web.server.MockServerWebExchange.from(request.header("Origin","https://ui.test"));
+            assertTrue(new org.springframework.web.cors.reactive.DefaultCorsProcessor().process(cors,exchange),
+                    "The deployed CORS policy must admit member role PATCH (preflight="+preflight+")");
+        }
+        var outsider=org.springframework.mock.web.server.MockServerWebExchange.from(
+                org.springframework.mock.http.server.reactive.MockServerHttpRequest.patch("https://gateway.test/api/v1/organisations/x")
+                    .header("Origin","https://untrusted.test"));
+        assertFalse(new org.springframework.web.cors.reactive.DefaultCorsProcessor().process(cors,outsider));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,outsider.getResponse().getStatusCode());
+    }
 }
