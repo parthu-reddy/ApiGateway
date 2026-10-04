@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 @ConditionalOnProperty(prefix = "dev.otp", name = "enabled", havingValue = "true")
 public final class DevOtpAccessFilter implements GlobalFilter, Ordered {
 
-    public static final String OTP_LOOKUP_PATH = "/api/v1/internal/auth/admin/otp";
+    public static final String OTP_LOOKUP_PATH = "/api/v1/auth/dev/otp";
     private static final String VALIDATED_ATTRIBUTE = DevOtpAccessFilter.class.getName() + ".validated";
 
     @Override

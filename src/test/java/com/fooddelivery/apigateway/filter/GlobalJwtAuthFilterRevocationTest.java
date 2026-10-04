@@ -36,6 +36,7 @@ import reactor.core.publisher.Mono;
 class GlobalJwtAuthFilterRevocationTest {
 
     private final ReactiveStringRedisTemplate redis = mock(ReactiveStringRedisTemplate.class);
+    private final org.springframework.data.redis.core.ReactiveValueOperations<String,String> values = mock(org.springframework.data.redis.core.ReactiveValueOperations.class);
     private final IdentityTokenService identityTokenService = mock(IdentityTokenService.class);
     private final AtomicInteger passedToChain = new AtomicInteger();
     private GlobalJwtAuthFilter filter;
@@ -48,6 +49,8 @@ class GlobalJwtAuthFilterRevocationTest {
         ReflectionTestUtils.setField(filter, "publicKeyResource", new ByteArrayResource(publicKeyPem()));
         ReflectionTestUtils.setField(filter, "identityTokenService", identityTokenService);
         ReflectionTestUtils.setField(filter, "redisTemplate", redis);
+        ReflectionTestUtils.setField(filter,"metrics",new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        when(redis.opsForValue()).thenReturn(values);
         RbacConfig rbac = new RbacConfig();
         rbac.setRules(Map.of("authenticated", List.of("/api/v1/users")));
         ReflectionTestUtils.setField(filter, "rbacConfig", rbac);
@@ -58,9 +61,8 @@ class GlobalJwtAuthFilterRevocationTest {
     }
 
     @Test
-    void explicitRegistrationCanReachIdentityWithoutAnExistingSession() {
-        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/internal/auth/register")
-                .header("X-Calling-Service", "RESTAURANT").build());
+    void oneLoginSessionCanReachIdentityWithoutAnExistingSession() {
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/session").build());
         filter.filter(exchange, this::passThrough).block();
         assertEquals(1, passedToChain.get());
         assertNull(exchange.getResponse().getStatusCode());
@@ -74,6 +76,9 @@ class GlobalJwtAuthFilterRevocationTest {
         assertEquals(0, passedToChain.get());
     }
 
+    private static String session(String id) {
+        return "[{\"sessionId\":\""+id+"\",\"purpose\":\"LOGIN\",\"absoluteExpiresAt\":\"2099-01-01T00:00:00Z\"}]";
+    }
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings={
         "/api/v1/internal/organisations/22222222-2222-2222-2222-222222222222/members",
@@ -138,8 +143,8 @@ class GlobalJwtAuthFilterRevocationTest {
     @Test
     void gatewayDoesNotCacheNegativeRevocationLookups() {
         String sessionId = "session-123";
-        when(redis.hasKey("BLACKLIST:SESSION:" + sessionId))
-                .thenReturn(Mono.just(false), Mono.just(true));
+        var keys=List.of("BLACKLIST:SESSION:"+sessionId,"ENTITLEMENTS_VERSION:11111111-1111-1111-1111-111111111111","USER_SESSIONS:11111111-1111-1111-1111-111111111111");
+        when(values.multiGet(keys)).thenReturn(Mono.just(java.util.Arrays.asList(null,"0",session(sessionId))),Mono.just(java.util.Arrays.asList("true","0",session(sessionId))));
 
         MockServerWebExchange first = exchange("/api/v1/users/profile", token(sessionId));
         filter.filter(first, this::passThrough).block();
@@ -148,7 +153,8 @@ class GlobalJwtAuthFilterRevocationTest {
         MockServerWebExchange second = exchange("/api/v1/users/profile", token(sessionId));
         filter.filter(second, this::passThrough).block();
 
-        verify(redis, times(2)).hasKey("BLACKLIST:SESSION:" + sessionId);
+        verify(values,times(2)).multiGet(keys);
+        verify(redis,org.mockito.Mockito.never()).hasKey(org.mockito.ArgumentMatchers.anyString());
         assertEquals(HttpStatus.UNAUTHORIZED, second.getResponse().getStatusCode());
         assertEquals(1, passedToChain.get());
     }
@@ -161,7 +167,7 @@ class GlobalJwtAuthFilterRevocationTest {
         var rules=org.springframework.boot.context.properties.bind.Binder.get(env).bind("rbac",
                 org.springframework.boot.context.properties.bind.Bindable.of(RbacConfig.class)).orElseThrow(IllegalStateException::new);
         ReflectionTestUtils.setField(filter,"rbacConfig",rules);
-        when(redis.hasKey("BLACKLIST:SESSION:partner-test")).thenReturn(Mono.just(false));
+        when(values.multiGet(org.mockito.ArgumentMatchers.anyCollection())).thenReturn(Mono.just(java.util.Arrays.asList(null,"0",session("partner-test"))));
         for(String path:List.of("/api/v1/restaurant-onboarding/organisations/x/application","/api/v1/delivery-onboarding/application","/api/v1/verification/upload-url")) {
             int before=passedToChain.get();var anonymous=exchange(path,null);filter.filter(anonymous,this::passThrough).block();
             assertEquals(HttpStatus.UNAUTHORIZED,anonymous.getResponse().getStatusCode());assertEquals(before,passedToChain.get());
@@ -190,13 +196,15 @@ class GlobalJwtAuthFilterRevocationTest {
     }
 
     private String token(String sessionId) {
+        var now=java.time.Clock.systemUTC().instant();
         return Jwts.builder()
                 .setSubject("11111111-1111-1111-1111-111111111111")
                 .claim("phone", "9000000001")
                 .claim("roles", List.of("CUSTOMER"))
                 .claim("sessionId", sessionId)
-                .setIssuedAt(new java.util.Date())
-                .setExpiration(new java.util.Date(System.currentTimeMillis() + 60_000))
+                .claim("ev",0)
+                .setIssuedAt(java.util.Date.from(now))
+                .setExpiration(java.util.Date.from(now.plusSeconds(60)))
                 .signWith(keyPair.getPrivate(), SignatureAlgorithm.RS256)
                 .compact();
     }

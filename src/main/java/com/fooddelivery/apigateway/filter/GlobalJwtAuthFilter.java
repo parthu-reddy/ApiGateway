@@ -59,6 +59,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     
     @Autowired
     private com.fooddelivery.apigateway.config.RbacConfig rbacConfig;
+    @Autowired
+    private io.micrometer.core.instrument.MeterRegistry metrics;
     
     private PublicKey publicKey;
     private io.jsonwebtoken.JwtParser jwtParser;
@@ -146,7 +148,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(sanitizedExchange);
         }
 
-        // The legacy Dev route is admitted only by its enabled Dev filter, before internal
+        // The Dev route is admitted only by its enabled Dev filter, before internal
         // signatures or normal public-route exceptions can bypass its deployment guard.
         if (isDevOtpLookup) {
             if (!DevOtpAccessFilter.isValidated(exchange)
@@ -181,15 +183,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             }
         }
 
-        // 2. Block external access to internal endpoints (unless it's public auth routes or admin routes)
+        // 2. Only the administrator namespace is externally reachable under /internal.
         if (path.startsWith("/api/v1/internal/")) {
-            if (!(path.startsWith("/api/v1/internal/admin/") ||
-                  path.equals("/api/v1/internal/auth/initiate") || 
-                  path.equals("/api/v1/internal/auth/verify") ||
-                  path.equals("/api/v1/internal/auth/register") ||
-                  path.equals("/api/v1/internal/auth/logout") ||
-                  path.equals("/api/v1/internal/auth/sessions") ||
-                  path.startsWith("/api/v1/internal/auth/sessions/"))) {
+            if (!path.startsWith("/api/v1/internal/admin/")) {
                 log.warn("GlobalJwtAuthFilter 403 FORBIDDEN: External access to internal path={}", path);
                 sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
                 return sanitizedExchange.getResponse().setComplete();
@@ -198,7 +194,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         
         boolean isPublic = false;
         // Public endpoints (Auth, Home, Static, Webhooks, Actuator, Test)
-        if (path.equals("/") || path.equals("/api/v1/internal/auth/initiate") || path.equals("/api/v1/internal/auth/verify") || path.equals("/api/v1/internal/auth/register") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/") || path.startsWith("/olamaps/")) {
+        if ((sanitizedExchange.getRequest().getMethod()==org.springframework.http.HttpMethod.POST
+                && (path.equals("/api/v1/auth/otp") || path.equals("/api/v1/auth/session")))
+                || path.equals("/") || path.endsWith(".html") || path.contains("/webhooks/") || path.contains("/api/v1/webhooks/") || path.startsWith("/actuator/") || path.startsWith("/api/test/") || path.startsWith("/olamaps/")) {
             isPublic = true;
         }
         
@@ -235,21 +233,18 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 String userId = claims.getSubject();
                 String phone = claims.get("phone", String.class);
                 String sessionId = claims.get("sessionId", String.class);
-                if (sessionId == null || sessionId.isBlank()) {
+                Object rawVersion=claims.get("ev");
+                if (sessionId == null || sessionId.isBlank() || userId==null
+                        || !(rawVersion instanceof Integer || rawVersion instanceof Long)
+                        || ((Number)rawVersion).longValue()<0) {
                     return isPublic ? chain.filter(sanitizedExchange) : handleUnauthorized(sanitizedExchange);
                 }
+                long tokenVersion=((Number)rawVersion).longValue();
                 
                 @SuppressWarnings("unchecked")
                 List<String> rolesList = claims.get("roles", List.class);
                 String roles = (rolesList != null) ? String.join(",", rolesList) : "";
                 
-                // Role-Based Access Control
-                if (!isPublic && !hasRequiredRole(path, rolesList)) {
-                    log.warn("GlobalJwtAuthFilter 403 FORBIDDEN: path={} roles={}", path, rolesList);
-                    sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
-                    return sanitizedExchange.getResponse().setComplete();
-                }
-
                 long issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().getTime() : 0L;
 
                 Boolean isBlacklistedLocal = blacklistedSessionCache.getIfPresent(sessionId);
@@ -257,17 +252,41 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                     return handleUnauthorized(sanitizedExchange);
                 }
 
-                return redisTemplate.hasKey("BLACKLIST:SESSION:" + sessionId)
-                        .flatMap(isBlacklisted -> {
-                            if (Boolean.TRUE.equals(isBlacklisted)) {
+                final boolean publicRequest=isPublic;
+                // Check version before role gates: a newly approved person may still have an old
+                // token without the requested portal role and must be allowed to refresh it.
+                return redisTemplate.opsForValue().multiGet(List.of("BLACKLIST:SESSION:"+sessionId,"ENTITLEMENTS_VERSION:"+userId,"USER_SESSIONS:"+userId))
+                        .defaultIfEmpty(List.of())
+                        .onErrorResume(error -> {
+                            log.warn("Unable to verify session state; denying request failure={}",error.getClass().getSimpleName());
+                            return Mono.just(List.of());
+                        })
+                        .flatMap(values -> {
+                            if (values.size()!=3) return handleUnauthorized(sanitizedExchange);
+                            if (values.get(0)!=null) {
                                 blacklistedSessionCache.put(sessionId, true);
                                 return handleUnauthorized(sanitizedExchange);
                             }
+                            if (!com.fooddelivery.apigateway.security.PersonSessionVerifier.matches(values.get(2), sessionId,
+                                    rolesList != null && rolesList.contains("ADMIN"),
+                                    claims.getExpiration() == null ? null : claims.getExpiration().toInstant()))
+                                return handleUnauthorized(sanitizedExchange);
+                            long storedVersion;
+                            try {storedVersion=values.get(1)==null?0:Long.parseLong(values.get(1));}
+                            catch (NumberFormatException ex) {return handleUnauthorized(sanitizedExchange);}
+                            if (storedVersion<0) return handleUnauthorized(sanitizedExchange);
+                            boolean versionExempt=path.equals("/api/v1/auth/session/refresh") || path.equals("/api/v1/auth/logout");
+                            if (!versionExempt && tokenVersion<storedVersion) {
+                                metrics.counter("gateway.entitlements.stale_tokens").increment();
+                                sanitizedExchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                                sanitizedExchange.getResponse().getHeaders().set("X-Auth-Reason","ENTITLEMENTS_CHANGED");
+                                return sanitizedExchange.getResponse().setComplete();
+                            }
+                            if (!publicRequest && !hasRequiredRole(path,rolesList)) {
+                                sanitizedExchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                                return sanitizedExchange.getResponse().setComplete();
+                            }
                             return proceedWithValidToken(sanitizedExchange, chain, userId, phone, roles, sessionId, rolesList, path, finalFingerprint, issuedAt);
-                        })
-                        .onErrorResume(error -> {
-                            log.warn("Unable to check session revocation state; denying request", error);
-                            return handleUnauthorized(sanitizedExchange);
                         });
             } catch (Exception e) {
                 if (isPublic) {

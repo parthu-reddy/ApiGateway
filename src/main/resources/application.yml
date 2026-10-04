@@ -89,7 +89,7 @@ spring:
       - id: admin-identity-routes
         uri: lb://identity-service
         predicates:
-        - Path=/api/v1/internal/admin/users/**,/api/v1/internal/users/**,/api/v1/internal/auth/**,
+        - Path=/api/v1/internal/admin/users/**,/api/v1/internal/users/**,/api/v1/auth/**,
           /api/v1/internal/e2e/auth/**
         filters:
         - name: RequestRateLimiter
@@ -607,9 +607,12 @@ rbac:
     - /api/v1/users
     - /api/v1/restaurant-onboarding
     - /api/v1/delivery-onboarding
-    - /api/v1/internal/auth/sessions
-    - /api/v1/internal/auth/logout
+    - /api/v1/auth/session/refresh
+    - /api/v1/auth/logout
+    - /api/v1/auth/sessions
+    - /api/v1/auth/admin-session
     - /api/v1/verification
+    business: []
     customer:
     - /api/v1/customers
     - /api/v1/orders
