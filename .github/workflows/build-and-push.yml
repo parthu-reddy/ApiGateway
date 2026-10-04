@@ -14,6 +14,14 @@ jobs:
         with:
           path: ApiGateway
 
+      # The tests exercise the actual ConfigService configuration from the sibling checkout.
+      - name: Checkout Deployment Repo
+        uses: actions/checkout@v5
+        with:
+          repository: parthu-reddy/Deployment
+          path: Deployment
+          token: ${{ secrets.CHECKOUT_TOKEN }}
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -51,15 +59,8 @@ jobs:
 #          token: ${{ secrets.CHECKOUT_TOKEN }}
 #          repository: parthu-reddy/FoodDeliveryContracts
 #          event-type: module-pushed
-      - name: Checkout Deployment Repo
-        uses: actions/checkout@v5
-        with:
-          repository: parthu-reddy/Deployment
-          path: deps/Deployment
-          token: ${{ secrets.CHECKOUT_TOKEN }}
-
       - name: Clean up old Docker images
-        run: python3 deps/Deployment/retention.py --apply --delete-all --service api-gateway
+        run: python3 Deployment/retention.py --apply --delete-all --service api-gateway
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -71,7 +72,7 @@ jobs:
           platforms: linux/arm64
 
       - name: Update deployment env file
-        working-directory: deps/Deployment
+        working-directory: Deployment
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
