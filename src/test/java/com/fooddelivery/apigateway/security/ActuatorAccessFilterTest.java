@@ -25,6 +25,10 @@ class ActuatorAccessFilterTest {
     }
     @Test void healthRemainsAvailableAndProductRequestsKeepTheirExistingChain() {
         assertTrue(admits(MockServerHttpRequest.get("/actuator/health/readiness").build()));
+        assertTrue(admits(MockServerHttpRequest.head("/actuator/health").build()));
+        assertTrue(admits(MockServerHttpRequest.head("/actuator/health/readiness").build()));
+        assertFalse(admits(MockServerHttpRequest.post("/actuator/health").build()));
+        assertFalse(admits(MockServerHttpRequest.head("/actuator/prometheus").build()));
         assertTrue(admits(MockServerHttpRequest.get("/api/v1/users/me/portals").build()));
     }
     @Test void unsignedOrForgedHeadersCannotReadOperatorTelemetry() {

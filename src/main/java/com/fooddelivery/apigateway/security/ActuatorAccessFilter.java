@@ -19,7 +19,7 @@ public final class ActuatorAccessFilter implements WebFilter, Ordered {
     @Override public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
         if (!path.equals("/actuator") && !path.startsWith("/actuator/")) return chain.filter(exchange);
-        if (exchange.getRequest().getMethod() == HttpMethod.GET
+        if ((exchange.getRequest().getMethod() == HttpMethod.GET || exchange.getRequest().getMethod() == HttpMethod.HEAD)
                 && (path.equals("/actuator/health") || path.startsWith("/actuator/health/"))) return chain.filter(exchange);
         if (exchange.getRequest().getMethod() == HttpMethod.GET && signedOperator(exchange)) return chain.filter(exchange);
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
