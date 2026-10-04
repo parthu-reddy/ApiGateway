@@ -26,4 +26,16 @@ class PersonSessionVerifierTest {
             assertFalse(PersonSessionVerifier.matches(value, "owned", false, expiry));
         assertFalse(PersonSessionVerifier.matches(session("LOGIN", "invalid"), "owned", false, expiry));
     }
+    @Test void aValidMatchCannotHideInvalidOrDuplicateRowsLaterInTheRegistry() {
+        String valid = session("LOGIN", "2026-11-01T12:00:00Z");
+        String prefix = valid.substring(0, valid.length() - 1) + ",";
+        for (String row : new String[]{"null", "{}",
+                "{\"sessionId\":\"other\",\"purpose\":\"LOGIN\",\"absoluteExpiresAt\":\"invalid\"}",
+                "{\"sessionId\":\"other\",\"purpose\":\"UNKNOWN\",\"absoluteExpiresAt\":\"2026-11-01T12:00:00Z\"}",
+                valid.substring(1, valid.length() - 1)}) {
+            assertFalse(PersonSessionVerifier.matches(prefix + row + "]", "owned", false, expiry), row);
+        }
+        String other = valid.substring(1, valid.length() - 1).replace("owned", "other");
+        assertTrue(PersonSessionVerifier.matches(prefix + other + "]", "owned", false, expiry));
+    }
 }
