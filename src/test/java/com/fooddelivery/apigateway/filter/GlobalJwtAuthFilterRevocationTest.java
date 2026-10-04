@@ -152,6 +152,29 @@ class GlobalJwtAuthFilterRevocationTest {
         assertEquals(HttpStatus.UNAUTHORIZED, second.getResponse().getStatusCode());
         assertEquals(1, passedToChain.get());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"../Deployment/api-gateway.yml","src/main/resources/application.yml"})
+    void deployedAndFallbackPoliciesAllowAnAuthenticatedApplicantButDenyAdminAndServiceOnlyReads(String file) throws Exception {
+        var env=new org.springframework.core.env.StandardEnvironment();
+        for(var source:new org.springframework.boot.env.YamlPropertySourceLoader().load("partner-rbac",new org.springframework.core.io.FileSystemResource(file)))
+            env.getPropertySources().addFirst(source);
+        var rules=org.springframework.boot.context.properties.bind.Binder.get(env).bind("rbac",
+                org.springframework.boot.context.properties.bind.Bindable.of(RbacConfig.class)).orElseThrow(IllegalStateException::new);
+        ReflectionTestUtils.setField(filter,"rbacConfig",rules);
+        when(redis.hasKey("BLACKLIST:SESSION:partner-test")).thenReturn(Mono.just(false));
+        for(String path:List.of("/api/v1/restaurant-onboarding/organisations/x/application","/api/v1/delivery-onboarding/application","/api/v1/verification/upload-url")) {
+            int before=passedToChain.get();var anonymous=exchange(path,null);filter.filter(anonymous,this::passThrough).block();
+            assertEquals(HttpStatus.UNAUTHORIZED,anonymous.getResponse().getStatusCode());assertEquals(before,passedToChain.get());
+            var signed=exchange(path,token("partner-test"));filter.filter(signed,this::passThrough).block();
+            assertNull(signed.getResponse().getStatusCode());assertEquals(before+1,passedToChain.get());
+        }
+        for(String path:List.of("/api/v1/internal/admin/restaurant-applications","/api/v1/internal/admin/delivery-applications",
+                "/api/v1/internal/admin/verification/documents/x/download-url","/api/v1/internal/delivery-applications/x/context",
+                "/api/v1/internal/brands/x/verification-request")) {
+            int before=passedToChain.get();var outsider=exchange(path,token("partner-test"));filter.filter(outsider,this::passThrough).block();
+            assertEquals(HttpStatus.FORBIDDEN,outsider.getResponse().getStatusCode(),path);assertEquals(before,passedToChain.get());
+        }
+    }
 
     private Mono<Void> passThrough(ServerWebExchange ignored) {
         passedToChain.incrementAndGet();

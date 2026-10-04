@@ -46,6 +46,36 @@ spring:
             redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:5}
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
             key-resolver: '#{@ipKeyResolver}'
+      - id: restaurant-onboarding
+        uri: lb://restaurant-service
+        predicates:
+        - Path=/api/v1/restaurant-onboarding/**,/api/v1/internal/admin/restaurant-applications/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:5}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
+            key-resolver: '#{@ipKeyResolver}'
+      - id: delivery-onboarding
+        uri: lb://delivery-service
+        predicates:
+        - Path=/api/v1/delivery-onboarding/**,/api/v1/internal/admin/delivery-applications/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:5}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
+            key-resolver: '#{@ipKeyResolver}'
+      - id: government-verification
+        uri: lb://government-id-validation-service
+        predicates:
+        - Path=/api/v1/verification/**,/api/v1/internal/admin/verification/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:5}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
+            key-resolver: '#{@ipKeyResolver}'
       - id: admin-restaurant-routes
         uri: lb://restaurant-service
         predicates:
@@ -575,6 +605,8 @@ rbac:
   rules:
     authenticated:
     - /api/v1/users
+    - /api/v1/restaurant-onboarding
+    - /api/v1/delivery-onboarding
     - /api/v1/internal/auth/sessions
     - /api/v1/internal/auth/logout
     - /api/v1/verification
