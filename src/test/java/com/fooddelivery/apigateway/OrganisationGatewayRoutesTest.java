@@ -99,8 +99,33 @@ class OrganisationGatewayRoutesTest {
         var rules=Binder.get(env).bind("rbac",Bindable.of(com.fooddelivery.apigateway.config.RbacConfig.class)).orElseThrow(IllegalStateException::new);
         for(String path:List.of("/api/v1/restaurant-onboarding","/api/v1/delivery-onboarding","/api/v1/verification"))
             assertTrue(rules.getRules().get("authenticated").contains(path),file+" "+path);
-        for(var paths:rules.getRules().values()) for(String prefix:paths)
-            for(String internal:List.of("/api/v1/internal/delivery-applications/x/context","/api/v1/internal/brands/x/verification-request"))
-                assertFalse(internal.equals(prefix) || internal.startsWith(prefix+"/"),file+" exposes "+internal);
+        // No role may be granted any non-admin internal path, whether by naming one directly or by an
+        // ancestor prefix such as /api/v1 that would also match everything below /api/v1/internal.
+        for(var role:rules.getRules().entrySet()) for(String prefix:role.getValue())
+            assertFalse(exposesNonAdminInternal(prefix),file+" grants role '"+role.getKey()+"' internal prefix "+prefix);
+    }
+
+    /** Mirrors RbacConfig matching in GlobalJwtAuthFilter: a prefix grants itself and everything below it. */
+    static boolean exposesNonAdminInternal(String rawPrefix) {
+        String prefix=rawPrefix.endsWith("/")?rawPrefix.substring(0,rawPrefix.length()-1):rawPrefix;
+        String internal="/api/v1/internal";
+        if(prefix.isEmpty() || prefix.equals(internal) || internal.startsWith(prefix+"/")) return true;
+        if(!prefix.startsWith(internal+"/")) return false;
+        String admin=internal+"/admin";
+        return !(prefix.equals(admin) || prefix.startsWith(admin+"/"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"/api","/api/v1","/api/v1/","/api/v1/internal","/api/v1/internal/brands",
+            "/api/v1/internal/delivery-applications/x/context","/api/v1/internal/administrators",""})
+    void internalPrefixCheckRefusesAncestorsAndNonAdminInternalPaths(String prefix) {
+        assertTrue(exposesNonAdminInternal(prefix),prefix);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"/api/v1/internal/admin","/api/v1/internal/admin/restaurant-applications",
+            "/api/v1/organisations","/api/v1/restaurant-onboarding","/api/v1/internalised"})
+    void internalPrefixCheckAllowsAdminAndOrdinaryPaths(String prefix) {
+        assertFalse(exposesNonAdminInternal(prefix),prefix);
     }
 }
