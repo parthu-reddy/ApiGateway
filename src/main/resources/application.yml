@@ -179,7 +179,7 @@ spring:
       - id: money-advertiser
         uri: lb://wallet-service
         predicates:
-        - Path=/api/v1/money/advertiser/**
+        - Path=/api/v1/money/business/**
         filters:
         - name: RequestRateLimiter
           args:
@@ -612,7 +612,9 @@ rbac:
     - /api/v1/auth/sessions
     - /api/v1/auth/admin-session
     - /api/v1/verification
-    business: []
+    business:
+    - /api/v1/money/business
+    - /api/v1/advertisers
     customer:
     - /api/v1/customers
     - /api/v1/orders
@@ -642,9 +644,7 @@ rbac:
     - /api/v1/ledger
     - /api/v1/chat
     - /ws/chat
-    - /api/v1/advertisers
     - /api/v1/money/restaurant
-    - /api/v1/money/advertiser
     - /api/v1/ledger/statements
     - /api/v1/ledger/payouts
     # ReviewsService verifies the selected owner role; CustomerApplication confirms order
