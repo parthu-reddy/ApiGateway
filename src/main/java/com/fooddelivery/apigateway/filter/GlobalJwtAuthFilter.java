@@ -278,7 +278,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         || ((Number) rawVersion).longValue() < 0) {
                     return isPublic
                             ? chain.filter(sanitizedExchange)
-                            : handleUnauthorized(sanitizedExchange);
+                            : handleUnauthorized(sanitizedExchange, path, "malformed-claims");
                 }
                 long tokenVersion = ((Number) rawVersion).longValue();
 
@@ -290,7 +290,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
                 Boolean isBlacklistedLocal = blacklistedSessionCache.getIfPresent(sessionId);
                 if (Boolean.TRUE.equals(isBlacklistedLocal)) {
-                    return handleUnauthorized(sanitizedExchange);
+                    return handleUnauthorized(sanitizedExchange, path, "session-revoked");
                 }
 
                 final boolean publicRequest = isPublic;
@@ -315,10 +315,12 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                         .flatMap(
                                 values -> {
                                     if (values.size() != 3)
-                                        return handleUnauthorized(sanitizedExchange);
+                                        return handleUnauthorized(
+                                                sanitizedExchange, path, "session-state-unavailable");
                                     if (values.get(0) != null) {
                                         blacklistedSessionCache.put(sessionId, true);
-                                        return handleUnauthorized(sanitizedExchange);
+                                        return handleUnauthorized(
+                                                sanitizedExchange, path, "session-revoked");
                                     }
                                     if (!com.fooddelivery.apigateway.security.PersonSessionVerifier
                                             .matches(
@@ -329,7 +331,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                                                     claims.getExpiration() == null
                                                             ? null
                                                             : claims.getExpiration().toInstant()))
-                                        return handleUnauthorized(sanitizedExchange);
+                                        return handleUnauthorized(
+                                                sanitizedExchange, path, "session-not-active");
                                     long storedVersion;
                                     try {
                                         storedVersion =
@@ -337,14 +340,17 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                                                         ? 0
                                                         : Long.parseLong(values.get(1));
                                     } catch (NumberFormatException ex) {
-                                        return handleUnauthorized(sanitizedExchange);
+                                        return handleUnauthorized(
+                                                sanitizedExchange, path, "bad-entitlements-version");
                                     }
                                     if (storedVersion < 0)
-                                        return handleUnauthorized(sanitizedExchange);
+                                        return handleUnauthorized(
+                                                sanitizedExchange, path, "bad-entitlements-version");
                                     boolean versionExempt =
                                             path.equals("/api/v1/auth/session/refresh")
                                                     || path.equals("/api/v1/auth/logout");
                                     if (!versionExempt && tokenVersion < storedVersion) {
+                                        logRejection(sanitizedExchange, path, "entitlements-changed");
                                         metrics.counter("gateway.entitlements.stale_tokens")
                                                 .increment();
                                         sanitizedExchange
@@ -378,7 +384,8 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                 if (isPublic) {
                     return chain.filter(sanitizedExchange);
                 }
-                return handleUnauthorized(sanitizedExchange);
+                return handleUnauthorized(
+                        sanitizedExchange, path, "invalid-token:" + e.getClass().getSimpleName());
             }
         }
 
@@ -386,7 +393,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(sanitizedExchange);
         }
 
-        return handleUnauthorized(sanitizedExchange);
+        return handleUnauthorized(sanitizedExchange, path, "no-token");
     }
 
     private Mono<Void> proceedWithValidToken(
@@ -471,7 +478,20 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
         return false;
     }
 
-    private Mono<Void> handleUnauthorized(ServerWebExchange exchange) {
+    /**
+     * One line per refused request, so a 401 seen in a browser can be matched to its cause here (a
+     * revoked session used to leave no trace). Never logs the token, query string or session id.
+     */
+    private void logRejection(ServerWebExchange exchange, String path, String reason) {
+        log.info(
+                "GlobalJwtAuthFilter REJECTED: path={} method={} reason={}",
+                path,
+                exchange.getRequest().getMethod(),
+                reason);
+    }
+
+    private Mono<Void> handleUnauthorized(ServerWebExchange exchange, String path, String reason) {
+        logRejection(exchange, path, reason);
         List<String> accept = exchange.getRequest().getHeaders().get(HttpHeaders.ACCEPT);
         if (accept != null
                 && accept.stream().anyMatch(a -> a.contains(MediaType.TEXT_HTML_VALUE))) {

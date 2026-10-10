@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
@@ -41,6 +42,8 @@ class GlobalJwtAuthFilterRevocationTest {
     private final AtomicInteger passedToChain = new AtomicInteger();
     private GlobalJwtAuthFilter filter;
     private KeyPair keyPair;
+    private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs =
+            new ch.qos.logback.core.read.ListAppender<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -58,6 +61,78 @@ class GlobalJwtAuthFilterRevocationTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyLong())).thenReturn("gateway-signature");
         filter.init();
+        logs.start();
+        filterLogger().addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogs() {
+        filterLogger().detachAppender(logs);
+    }
+
+    private static ch.qos.logback.classic.Logger filterLogger() {
+        return (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GlobalJwtAuthFilter.class);
+    }
+
+    private List<String> rejections() {
+        return logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                .filter(message -> message.startsWith("GlobalJwtAuthFilter REJECTED")).toList();
+    }
+
+    // checkpoint144: a quote sent on a signed-out session drew a 401 that left no gateway log line.
+    @Test
+    void revokedSessionIsLoggedWithItsReasonButNeverItsToken() {
+        String sessionId = "session-revoked-log";
+        String token = token(sessionId);
+        when(values.multiGet(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Mono.just(java.util.Arrays.asList("true", "0", session(sessionId))));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/orders/quote")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).build());
+
+        filter.filter(exchange, this::passThrough).block();
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+        assertEquals(List.of("GlobalJwtAuthFilter REJECTED: path=/api/v1/orders/quote method=POST reason=session-revoked"),
+                rejections());
+        String all = String.join("\n", logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+        org.junit.jupiter.api.Assertions.assertFalse(all.contains(token) || all.contains(sessionId));
+    }
+
+    @Test
+    void sessionMissingFromTheRegistryIsLoggedAsNotActive() {
+        when(values.multiGet(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Mono.just(java.util.Arrays.asList(null, "0", session("some-other-session"))));
+        var exchange = exchange("/api/v1/users/profile", token("session-ended"));
+
+        filter.filter(exchange, this::passThrough).block();
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+        assertEquals(List.of("GlobalJwtAuthFilter REJECTED: path=/api/v1/users/profile method=GET reason=session-not-active"),
+                rejections());
+    }
+
+    @Test
+    void staleEntitlementsAreLoggedBesideTheRefreshHeader() {
+        when(values.multiGet(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Mono.just(java.util.Arrays.asList(null, "5", session("session-stale"))));
+        var exchange = exchange("/api/v1/users/profile", token("session-stale"));
+
+        filter.filter(exchange, this::passThrough).block();
+
+        assertEquals("ENTITLEMENTS_CHANGED", exchange.getResponse().getHeaders().getFirst("X-Auth-Reason"));
+        assertEquals(List.of("GlobalJwtAuthFilter REJECTED: path=/api/v1/users/profile method=GET reason=entitlements-changed"),
+                rejections());
+    }
+
+    @Test
+    void missingAndUnreadableTokensAreLogged() {
+        filter.filter(exchange("/api/v1/users/profile", null), this::passThrough).block();
+        filter.filter(exchange("/api/v1/users/profile", "not-a-jwt"), this::passThrough).block();
+
+        assertEquals(List.of("GlobalJwtAuthFilter REJECTED: path=/api/v1/users/profile method=GET reason=no-token",
+                "GlobalJwtAuthFilter REJECTED: path=/api/v1/users/profile method=GET reason=invalid-token:MalformedJwtException"),
+                rejections());
+        assertEquals(0, passedToChain.get());
     }
 
     @Test
