@@ -620,7 +620,6 @@ rbac:
     - /api/v1/orders
     - /api/v1/places
     - /api/places
-    - /api/maps
     - /api/config
     - /api/v1/ledger
     - /api/v1/chat
@@ -639,7 +638,6 @@ rbac:
     - /api/v1/logistics
     - /api/v1/images
     - /api/places
-    - /api/maps
     - /api/config
     - /api/v1/ledger
     - /api/v1/chat
@@ -656,9 +654,7 @@ rbac:
     - /api/v1/delivery
     - /api/delivery
     - /api/logistics
-    - /api/fleet
     - /api/places
-    - /api/maps
     - /api/config
     - /api/v1/ledger
     - /api/v1/chat
