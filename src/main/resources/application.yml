@@ -16,6 +16,18 @@ spring:
       # Any new route MUST carry its own RequestRateLimiter; validate_core_services.py check
       # GW-RATELIMIT enforces that.
       routes:
+      # Catalog paths, split out of restaurant-service (RandomDocuments/ServiceDecomposition_2026-10-12). First, because
+      # admin-restaurant-routes and restaurant-catalog below still cover these paths and the first match wins.
+      - id: catalog-service
+        uri: lb://catalog-service
+        predicates:
+        - Path=/api/v1/brands/*/master-menu,/api/v1/brands/*/master-menu/**,/api/v1/brands/*/categories,/api/v1/brands/*/categories/**,/api/v1/outlets/*/menu-overrides,/api/v1/outlets/*/menu-overrides/**,/api/v1/outlets/*/menu-items/**,/api/v1/outlets/*/categories/**,/api/v1/restaurants/*/catalog/**,/api/v1/restaurants/*/menu/**,/api/v1/categories,/api/v1/categories/**,/api/v1/internal/admin/restaurants/*/catalog/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:20}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
+            key-resolver: '#{@ipKeyResolver}'
       - id: admin-customer-routes
         uri: lb://customer-service
         predicates:
@@ -401,6 +413,17 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/customer-service/(.*),/$1
+      - id: service-docs-catalog
+        uri: lb://catalog-service
+        predicates:
+        - Path=/service-docs/catalog-service/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:20}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
+            key-resolver: '#{@ipKeyResolver}'
+        - RewritePath=/service-docs/catalog-service/(.*),/$1
       - id: service-docs-restaurant
         uri: lb://restaurant-service
         predicates:
