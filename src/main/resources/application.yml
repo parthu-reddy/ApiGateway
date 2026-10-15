@@ -28,10 +28,20 @@ spring:
             redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:20}
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
+      - id: admin-order-routes
+        uri: lb://order-service
+        predicates:
+        - Path=/api/v1/internal/admin/orders/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:5}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
+            key-resolver: '#{@ipKeyResolver}'
       - id: admin-customer-routes
         uri: lb://customer-service
         predicates:
-        - Path=/api/v1/internal/admin/orders/**,/api/v1/internal/admin/customers/**
+        - Path=/api/v1/internal/admin/customers/**
         filters:
         - name: RequestRateLimiter
           args:
@@ -39,7 +49,7 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:10}
             key-resolver: '#{@ipKeyResolver}'
       - id: admin-refund-routes
-        uri: lb://customer-service
+        uri: lb://order-service
         predicates:
         - Path=/api/v1/internal/admin/refunds/**
         filters:
@@ -159,7 +169,7 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:20}
             key-resolver: '#{@ipKeyResolver}'
       - id: money-customer
-        uri: lb://customer-service
+        uri: lb://order-service
         predicates:
         - Path=/api/v1/money/customer/**
         filters:
@@ -169,7 +179,7 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
       - id: money-restaurant
-        uri: lb://customer-service
+        uri: lb://order-service
         predicates:
         - Path=/api/v1/money/restaurant/**
         filters:
@@ -179,7 +189,7 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
       - id: money-driver
-        uri: lb://customer-service
+        uri: lb://order-service
         predicates:
         - Path=/api/v1/money/driver/**
         filters:
@@ -294,7 +304,7 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
       - id: customer-restaurant-facade
-        uri: lb://customer-service
+        uri: lb://order-service
         predicates:
         - Path=/api/v1/restaurants/nearby,/api/v1/restaurants/brands/**,/api/v1/restaurants/*/delivery-availability
         filters:
@@ -305,9 +315,19 @@ spring:
             key-resolver: '#{@ipKeyResolver}'
 
       - id: customer-orders
+        uri: lb://order-service
+        predicates:
+        - Path=/api/v1/orders/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:20}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
+            key-resolver: '#{@ipKeyResolver}'
+      - id: customer-accounts
         uri: lb://customer-service
         predicates:
-        - Path=/api/v1/orders/**,/api/v1/customers/**
+        - Path=/api/v1/customers/**
 
       # ---------------------------------------------------------------- restaurant surface
         filters:
@@ -413,6 +433,17 @@ spring:
             redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
             key-resolver: '#{@ipKeyResolver}'
         - RewritePath=/service-docs/customer-service/(.*),/$1
+      - id: service-docs-order
+        uri: lb://order-service
+        predicates:
+        - Path=/service-docs/order-service/**
+        filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate:20}
+            redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity:40}
+            key-resolver: '#{@ipKeyResolver}'
+        - RewritePath=/service-docs/order-service/(.*),/$1
       - id: service-docs-catalog
         uri: lb://catalog-service
         predicates:
@@ -594,6 +625,8 @@ springdoc:
     urls:
     - name: Customer Service
       url: /service-docs/customer-service/v3/api-docs
+    - name: Order Service
+      url: /service-docs/order-service/v3/api-docs
     - name: Restaurant Service
       url: /service-docs/restaurant-service/v3/api-docs
     - name: Delivery Service
