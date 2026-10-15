@@ -65,7 +65,7 @@ jobs:
       # second failure fails the job, which build_services.sh reports.
       - name: Build and push Docker image
         id: push
-        timeout-minutes: 8
+        timeout-minutes: 3
         continue-on-error: true
         uses: docker/build-push-action@v5
         with:
@@ -77,7 +77,7 @@ jobs:
 
       - name: Retry build and push Docker image
         if: steps.push.outcome == 'failure'
-        timeout-minutes: 8
+        timeout-minutes: 3
         uses: docker/build-push-action@v5
         with:
           context: .
