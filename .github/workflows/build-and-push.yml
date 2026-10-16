@@ -30,7 +30,16 @@ jobs:
         with:
           java-version: '17'
           distribution: temurin
-          cache: maven
+
+      # Maven repository cache. The key is setup-java's own format, so the caches it saved still hit. On a miss (a pom
+      # edit; every repo on 2026-10-16 when CI moved to arm64) the newest cache with the same prefix is restored instead
+      # of nothing, and only changed dependencies download. RandomDocuments/ReleaseSpeed_2026-10-15 Phase 11.
+      - name: Maven cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: setup-java-${{ runner.os }}-arm64-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: setup-java-${{ runner.os }}-arm64-maven-
 
       - name: Build Microservice
         env:
