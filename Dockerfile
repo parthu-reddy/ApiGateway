@@ -2,7 +2,11 @@
 FROM --platform=$BUILDPLATFORM eclipse-temurin:17-jre-jammy AS builder
 WORKDIR /builder
 COPY ApiGateway/target/*-SNAPSHOT.jar app.jar
-RUN java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
+# Clamp file times so identical content gives identical layers. extract stamps everything with the build time, so
+# the 114 MB dependencies layer had a new digest on every build: every CI push re-uploaded it to OCIR and every
+# deploy re-pulled it. RandomDocuments/ReleaseSpeed_2026-10-15 Phase 2.
+RUN java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted \
+    && find extracted -exec touch -h -d @0 {} +
 
 # Final stage
 FROM eclipse-temurin:17-jre-jammy

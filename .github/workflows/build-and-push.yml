@@ -7,7 +7,9 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    # Native arm64: the Oracle VM is aarch64 (Ampere), so the image is built where it runs, without QEMU.
+    # Free and 4-CPU on public repos. RandomDocuments/ReleaseSpeed_2026-10-15 Phase 5.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - name: Checkout Microservice
@@ -36,9 +38,6 @@ jobs:
           # instead of being rebuilt from source in this job.
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
         run: mvn -B clean package -Pci-tests -s ApiGateway/.github/maven-settings.xml -f ApiGateway/pom.xml
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,6 +73,11 @@ jobs:
           push: true
           tags: hyd.ocir.io/axekmbadoczl/food-delivery/api-gateway:${{ github.sha }}
           platforms: linux/arm64
+
+      # The retry gets a new BuildKit builder instead of the one whose push just failed or stalled.
+      - name: Fresh builder for the retry
+        if: steps.push.outcome == 'failure'
+        uses: docker/setup-buildx-action@v3
 
       - name: Retry build and push Docker image
         if: steps.push.outcome == 'failure'
