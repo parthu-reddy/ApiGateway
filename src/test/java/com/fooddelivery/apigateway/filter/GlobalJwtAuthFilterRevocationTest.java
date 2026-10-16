@@ -160,7 +160,10 @@ class GlobalJwtAuthFilterRevocationTest {
         "/api/v1/internal/organisations/22222222-2222-2222-2222-222222222222/members/11111111-1111-1111-1111-111111111111",
         "/api/v1/internal/users/11111111-1111-1111-1111-111111111111/organisations",
         "/api/v1/internal/restaurants/users/11111111-1111-1111-1111-111111111111/outlets?permission=ORG_VIEW",
-        "/api/v1/internal/restaurants/outlets/22222222-2222-2222-2222-222222222222/organisation"
+        "/api/v1/internal/restaurants/outlets/22222222-2222-2222-2222-222222222222/organisation",
+        // the two internal reads the service decomposition added (catalog-service and order-service call them)
+        "/api/v1/internal/restaurants/outlets/22222222-2222-2222-2222-222222222222/catalog-context",
+        "/api/v1/internal/customers/addresses/33333333-3333-3333-3333-333333333333"
     })
     void organisationInternalRoutesRejectExternalTrafficEvenWithValidCustomerToken(String path) {
         var exchange=exchange(path,token("session-org"));
