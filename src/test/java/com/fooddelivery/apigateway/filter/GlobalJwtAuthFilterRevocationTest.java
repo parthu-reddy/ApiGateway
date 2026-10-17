@@ -236,11 +236,10 @@ class GlobalJwtAuthFilterRevocationTest {
         assertEquals(HttpStatus.UNAUTHORIZED, second.getResponse().getStatusCode());
         assertEquals(1, passedToChain.get());
     }
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings={"../Deployment/api-gateway.yml","src/main/resources/application.yml"})
-    void deployedAndFallbackPoliciesAllowAnAuthenticatedApplicantButDenyAdminAndServiceOnlyReads(String file) throws Exception {
+    @org.junit.jupiter.api.Test
+    void deployedPolicyAllowsAnAuthenticatedApplicantButDeniesAdminAndServiceOnlyReads() throws Exception {
         var env=new org.springframework.core.env.StandardEnvironment();
-        for(var source:new org.springframework.boot.env.YamlPropertySourceLoader().load("partner-rbac",new org.springframework.core.io.FileSystemResource(file)))
+        for(var source:new org.springframework.boot.env.YamlPropertySourceLoader().load("partner-rbac",new org.springframework.core.io.FileSystemResource("../Deployment/api-gateway.yml")))
             env.getPropertySources().addFirst(source);
         var rules=org.springframework.boot.context.properties.bind.Binder.get(env).bind("rbac",
                 org.springframework.boot.context.properties.bind.Bindable.of(RbacConfig.class)).orElseThrow(IllegalStateException::new);

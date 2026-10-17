@@ -89,6 +89,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Retry build and push Docker image
+        id: push_retry
         if: steps.push.outcome == 'failure'
         timeout-minutes: 3
         uses: docker/build-push-action@v5
@@ -104,6 +105,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # The pushed manifest's digest names this exact image; the tag can be re-pushed by a library-only
+          # rebuild. The pin carries both (Deployment/pins.py); a tag alone is never pinned.
+          DIGEST="${{ steps.push.outputs.digest || steps.push_retry.outputs.digest }}"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "the push reported no image digest ('$DIGEST'); refusing to pin a tag alone"
+            exit 1
+          fi
           
           MAX_RETRIES=5
           for i in $(seq 1 $MAX_RETRIES); do
@@ -112,7 +121,7 @@ jobs:
 
             TAG_VAR=$(echo "api-gateway" | tr '[:lower:]' '[:upper:]' | tr '-' '_')_TAG
             mkdir -p env_deployments/dev
-            echo "${TAG_VAR}=${{ github.sha }}" > env_deployments/dev/api-gateway.env
+            printf '%s=%s\n%s=%s\n' "${TAG_VAR}" "${{ github.sha }}" "${TAG_VAR%_TAG}_DIGEST" "$DIGEST" > env_deployments/dev/api-gateway.env
             git add env_deployments/dev/api-gateway.env
 
             # Check if there are changes to commit

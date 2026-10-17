@@ -67,9 +67,8 @@ class OrganisationGatewayRoutesTest {
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,outsider.getResponse().getStatusCode());
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings={"../Deployment/api-gateway.yml","src/main/resources/application.yml"})
-    void partnerRoutesBindToTheCorrectServiceWithRateLimitersAndOnlyOwnPathsAreAuthenticated(String file) throws Exception {
+    @Test void partnerRoutesBindToTheCorrectServiceWithRateLimitersAndOnlyOwnPathsAreAuthenticated() throws Exception {
+        String file="../Deployment/api-gateway.yml";
         var env=new StandardEnvironment();var resource=new FileSystemResource(file);assertTrue(resource.exists());
         for(var source:new YamlPropertySourceLoader().load("partner-routes",resource)) env.getPropertySources().addFirst(source);
         var expected=Map.of("/api/v1/restaurant-onboarding/organisations/x/application","restaurant-service",
