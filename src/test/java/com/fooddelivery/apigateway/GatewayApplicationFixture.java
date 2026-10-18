@@ -15,7 +15,9 @@ import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
     // The deployment supplies this from OCI Vault; the Ola Maps route's AddRequestParameter rejects an empty value.
     "OLA_MAPS_API_KEY=test-ola-maps-key",
     "spring.cloud.config.enabled=false","spring.cloud.discovery.enabled=false","eureka.client.enabled=false",
-    "management.health.redis.enabled=false"})
+    "management.health.redis.enabled=false",
+    // The imported file puts the actuator on 9080; a fixed port collides across cached test contexts.
+    "management.server.port=0"})
 abstract class GatewayApplicationFixture {
     @MockBean ReactiveRedisConnectionFactory cacheConnection;
     @MockBean org.springframework.data.redis.connection.RedisConnectionFactory synchronousCacheConnection;

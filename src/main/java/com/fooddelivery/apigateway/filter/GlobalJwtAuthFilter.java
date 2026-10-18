@@ -64,6 +64,12 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
     private io.jsonwebtoken.JwtParser jwtParser;
 
     /**
+     * Registered at startup so EntitlementStaleTokenSpike's series exists at 0 before the first refusal; a counter
+     * Micrometer creates on first increment has no series until then.
+     */
+    private io.micrometer.core.instrument.Counter staleTokens;
+
+    /**
      * Only revoked sessions are cached. Caching a negative Redis lookup leaves a revocation window
      * in which a just-suspended user can keep using an otherwise valid JWT.
      */
@@ -72,6 +78,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
     @PostConstruct
     public void init() {
+        staleTokens = metrics.counter("gateway.entitlements.stale_tokens");
         try {
             byte[] keyBytes = FileCopyUtils.copyToByteArray(publicKeyResource.getInputStream());
             String keyString =
@@ -351,8 +358,7 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
                                                     || path.equals("/api/v1/auth/logout");
                                     if (!versionExempt && tokenVersion < storedVersion) {
                                         logRejection(sanitizedExchange, path, "entitlements-changed");
-                                        metrics.counter("gateway.entitlements.stale_tokens")
-                                                .increment();
+                                        staleTokens.increment();
                                         sanitizedExchange
                                                 .getResponse()
                                                 .setStatusCode(HttpStatus.UNAUTHORIZED);

@@ -1,7 +1,9 @@
 package com.fooddelivery.apigateway.security;
 
-import com.fooddelivery.common.security.IdentityTokenService;
+import java.net.InetSocketAddress;
 
+import org.springframework.boot.web.reactive.context.ReactiveWebServerInitializedEvent;
+import org.springframework.context.ApplicationListener;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -12,13 +14,31 @@ import org.springframework.web.server.WebFilterChain;
 
 import reactor.core.publisher.Mono;
 
-/** Actuator is not a Gateway route: protect its operator reads before handler dispatch. */
+/**
+ * Actuator is not a Gateway route, and this filter runs on both of the gateway's ports (GatewayScrapeAndAlerting
+ * Phase 1 spike S-1), so it decides by the port a request arrived on.
+ *
+ * <ul>
+ *   <li>The management port ({@code management.server.port}, never published by compose) serves actuator reads to
+ *       anyone on the compose network, like every internal service: Prometheus scrapes it anonymously. Only GET and
+ *       HEAD pass, so Spring Cloud Gateway's route writes ({@code POST /actuator/gateway/refresh}, route
+ *       create/delete) can never be reached.
+ *   <li>Every other port — the public edge — answers 404 for {@code /actuator/**}. If the management port setting is
+ *       ever removed there is no management server, every actuator request lands here, and the scrape fails rather
+ *       than the edge opening.
+ * </ul>
+ */
 @Component
-public final class ActuatorAccessFilter implements WebFilter, Ordered {
-    private final IdentityTokenService signatures;
+public final class ActuatorAccessFilter
+        implements WebFilter, Ordered, ApplicationListener<ReactiveWebServerInitializedEvent> {
 
-    public ActuatorAccessFilter(IdentityTokenService signatures) {
-        this.signatures = signatures;
+    /** The management server's bound port; -1 until it starts (or when it shares the main server). */
+    private volatile int managementPort = -1;
+
+    @Override
+    public void onApplicationEvent(ReactiveWebServerInitializedEvent event) {
+        if ("management".equals(event.getApplicationContext().getServerNamespace()))
+            managementPort = event.getWebServer().getPort();
     }
 
     @Override
@@ -26,34 +46,18 @@ public final class ActuatorAccessFilter implements WebFilter, Ordered {
         String path = exchange.getRequest().getPath().value();
         if (!path.equals("/actuator") && !path.startsWith("/actuator/"))
             return chain.filter(exchange);
-        if ((exchange.getRequest().getMethod() == HttpMethod.GET
-                        || exchange.getRequest().getMethod() == HttpMethod.HEAD)
-                && (path.equals("/actuator/health") || path.startsWith("/actuator/health/")))
+        InetSocketAddress local = exchange.getRequest().getLocalAddress();
+        if (local == null || managementPort <= 0 || local.getPort() != managementPort)
+            return refuse(exchange, HttpStatus.NOT_FOUND);
+        HttpMethod method = exchange.getRequest().getMethod();
+        if (method == HttpMethod.GET || method == HttpMethod.HEAD)
             return chain.filter(exchange);
-        if (exchange.getRequest().getMethod() == HttpMethod.GET && signedOperator(exchange))
-            return chain.filter(exchange);
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        return exchange.getResponse().setComplete();
+        return refuse(exchange, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
-    private boolean signedOperator(ServerWebExchange exchange) {
-        var headers = exchange.getRequest().getHeaders();
-        String user = headers.getFirst("X-User-Id"), roles = headers.getFirst("X-User-Roles");
-        if (user == null || user.isBlank() || !"SERVICE".equals(roles)) return false;
-        try {
-            long issued = Long.parseLong(headers.getFirst("X-Issued-At"));
-            long now = System.currentTimeMillis();
-            if (issued < now - 300_000 || issued > now + 30_000) return false;
-            return signatures.verify(
-                    headers.getFirst("X-Identity-Signature"),
-                    user,
-                    roles,
-                    headers.getFirst("X-User-Phone"),
-                    headers.getFirst("X-Session-Id"),
-                    issued);
-        } catch (RuntimeException invalid) {
-            return false;
-        }
+    private static Mono<Void> refuse(ServerWebExchange exchange, HttpStatus status) {
+        exchange.getResponse().setStatusCode(status);
+        return exchange.getResponse().setComplete();
     }
 
     @Override
