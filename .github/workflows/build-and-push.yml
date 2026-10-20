@@ -28,7 +28,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: temurin
 
       # Maven repository cache. The key is setup-java's own format, so the caches it saved still hit. On a miss (a pom

@@ -1,5 +1,5 @@
 # Builder stage
-FROM --platform=$BUILDPLATFORM eclipse-temurin:17-jre-jammy AS builder
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jre-jammy AS builder
 WORKDIR /builder
 COPY ApiGateway/target/*-SNAPSHOT.jar app.jar
 # Clamp file times so identical content gives identical layers. extract stamps everything with the build time, so
@@ -9,7 +9,7 @@ RUN java -Djarmode=tools -jar app.jar extract --layers --launcher --destination 
     && find extracted -exec touch -h -d @0 {} +
 
 # Final stage
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 # Non-root user setup for security
