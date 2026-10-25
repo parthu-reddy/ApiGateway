@@ -11,9 +11,7 @@ import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 @AnalyzeClasses(
     packages = "com.fooddelivery",
     importOptions = {
-        ImportOption.DoNotIncludeTests.class,
-        ImportOption.DoNotIncludeJars.class,
-        ImportOption.DoNotIncludeArchives.class
+        ImportOption.DoNotIncludeTests.class
     }
 )
 public class ArchitectureEnforcementTest {
