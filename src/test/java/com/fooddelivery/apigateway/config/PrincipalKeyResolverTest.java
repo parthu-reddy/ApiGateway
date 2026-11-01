@@ -89,10 +89,10 @@ class PrincipalKeyResolverTest {
     @Test
     void theGatewaysUserIdKeysTheBucketPerRoute() {
         String dining = key(onRoute(MockServerWebExchange.from(signedIn()), "restaurant-dining"));
-        String consent = key(onRoute(MockServerWebExchange.from(signedIn()), "restaurant-dining-consent"));
+        String guest = key(onRoute(MockServerWebExchange.from(signedIn()), "restaurant-dining-guest"));
         assertEquals("restaurant-dining|user:" + USER, dining);
-        assertEquals("restaurant-dining-consent|user:" + USER, consent);
-        assertNotEquals(dining, consent, "RedisRateLimiter keys by this value alone: one value would be one bucket");
+        assertEquals("restaurant-dining-guest|user:" + USER, guest);
+        assertNotEquals(dining, guest, "RedisRateLimiter keys by this value alone: one value would be one bucket");
     }
 
     @Test
@@ -102,7 +102,7 @@ class PrincipalKeyResolverTest {
                 .header("X-User-Id", "22222222-2222-2222-2222-222222222222")
                 .remoteAddress(new InetSocketAddress("10.0.0.7", 4000)).build();
         ServerWebExchange forwarded = throughTheAuthFilter(MockServerWebExchange.from(spoofed));
-        assertEquals("restaurant-dining-consent|user:" + USER, key(onRoute(forwarded, "restaurant-dining-consent")));
+        assertEquals("restaurant-dining-guest|user:" + USER, key(onRoute(forwarded, "restaurant-dining-guest")));
 
         MockServerHttpRequest anonymous = MockServerHttpRequest.get("/api/v1/brands")
                 .header("X-User-Id", "22222222-2222-2222-2222-222222222222")
