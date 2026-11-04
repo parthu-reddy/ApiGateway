@@ -1,0 +1,31 @@
+# Additive Maps routes. The existing Config Server remains the source for Food Delivery.
+# Configure the maximum simultaneously running gateway replicas; deployment must
+# enforce it (including rolling surge) to retain the partitioned aggregate cap.
+gateway:
+  maps:
+    enabled: true
+    edge-uri: ${MAPS_EDGE_URI}
+    public-uri: ${MAPS_PUBLIC_URI}
+    assets-uri: ${MAPS_ASSETS_URI}
+    postal-uri: ${MAPS_POSTAL_URI}
+    routing-uri: ${MAPS_ROUTING_URI}
+    maximum-replicas: ${MAPS_GATEWAY_MAXIMUM_REPLICAS:1}
+    public-requests-per-second: ${MAPS_GATEWAY_PUBLIC_RPS:1000}
+    private-requests-per-second: ${MAPS_GATEWAY_PRIVATE_RPS:100}
+spring:
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 300
+        response-timeout: 3s
+        pool:
+          type: fixed
+          max-connections: 64
+          acquire-timeout: 500
+        ssl:
+          use-insecure-trust-manager: false
+          key-store: ${MAPS_GATEWAY_TLS_KEY_STORE}
+          key-store-type: PKCS12
+          key-store-password: ${MAPS_GATEWAY_TLS_KEY_STORE_PASSWORD}
+          trusted-x509-certificates: ${MAPS_GATEWAY_TLS_TRUST_CERTIFICATES}
+          handshake-timeout: 500ms
