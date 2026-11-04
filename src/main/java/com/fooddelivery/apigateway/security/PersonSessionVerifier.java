@@ -1,18 +1,23 @@
 package com.fooddelivery.apigateway.security;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 
 /** A signed token must still name an owned, persisted session, including after a Dev wipe. */
 public final class PersonSessionVerifier {
     private static final com.fasterxml.jackson.databind.ObjectReader READER = new ObjectMapper()
-            .readerFor(JsonNode.class).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            .readerFor(JsonNode.class).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .with(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
     private PersonSessionVerifier() { }
 
     public static boolean matches(String json, String sessionId, boolean administrator, Instant tokenExpiry) {
-        if (json == null || json.length() > 16_000 || sessionId == null || tokenExpiry == null) return false;
+        if (json == null || json.length() > 16_000
+                || json.getBytes(StandardCharsets.UTF_8).length > 16_000
+                || sessionId == null || sessionId.isBlank() || tokenExpiry == null) return false;
         try {
             JsonNode sessions = READER.readTree(json);
             if (!sessions.isArray()) return false;
