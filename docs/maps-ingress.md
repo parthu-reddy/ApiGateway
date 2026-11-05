@@ -6,10 +6,15 @@ Its enabled instance refuses undeclared routes, including ordinary identity/admi
 machine, engine and independent bearer paths. Default Food Delivery behavior and
 its Config Server-owned routes retain independent regression coverage.
 
-Configure HTTPS edge/public/assets/postal/routing backends, an explicit client
-keystore and trust roots. Insecure upstream trust is refused. The Go edge verifies
+The profile runs standalone beside the Maps services on their own server: no Config
+Server, Eureka or Redis, with `SPRING_CLOUD_CONFIG_ENABLED=false` in its environment.
+The edge backend must be HTTPS with an explicit client keystore and trust roots,
+because it carries the session. Public/assets/postal/routing may instead be plain
+`http` to a one-label container name, because their routes strip credentials.
+Insecure upstream trust is refused. `MAPS_PUBLIC_ORIGIN` is the only allowed browser
+origin and `MAPS_GATEWAY_TRUSTED_PROXIES` names the proxy's network. The Go edge verifies
 the gateway's exact authorized URI SAN independently. Operator network ACLs and
-external public TLS/origin remain required. Review the final effective packaged
+external public TLS remain required. Review the final effective packaged
 configuration: Config Server precedence must not silently change these settings.
 
 Private browser routes use only the Go opaque Cookie/CSRF flow; mixed Authorization

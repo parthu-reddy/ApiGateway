@@ -1,9 +1,24 @@
-# Additive Maps routes. The existing Config Server remains the source for Food Delivery.
+# The Maps gateway instance. It runs beside the Maps services on their own server, so it needs nothing from the Food
+# Delivery server: no Config Server, Eureka or Redis. Admission is in-process and every route here is declared in code.
+#
+# SPRING_CLOUD_CONFIG_ENABLED=false must come from the environment (deploy/compose.production.json in MapsService). The
+# Config Server import in application.yml is resolved before this file is read, so setting it here has no effect.
+# Forgetting it fails startup rather than silently taking settings from a Config Server.
+#
 # Configure the maximum simultaneously running gateway replicas; deployment must
 # enforce it (including rolling surge) to retain the partitioned aggregate cap.
+security:
+  identity:
+    # Required by the legacy JWT filter, but no admitted Maps request reaches its signing or verifying. Random per start,
+    # so this server holds no Food Delivery secret and nothing signed here could be accepted anywhere.
+    hmac-secret: ${random.value}
 gateway:
+  rate-limit:
+    # Only the front proxy's network. Any other peer is keyed by its socket address, never by a header it wrote.
+    trusted-proxies: ${MAPS_GATEWAY_TRUSTED_PROXIES}
   maps:
     enabled: true
+    public-origin: ${MAPS_PUBLIC_ORIGIN}
     edge-uri: ${MAPS_EDGE_URI}
     public-uri: ${MAPS_PUBLIC_URI}
     assets-uri: ${MAPS_ASSETS_URI}
@@ -12,9 +27,24 @@ gateway:
     maximum-replicas: ${MAPS_GATEWAY_MAXIMUM_REPLICAS:1}
     public-requests-per-second: ${MAPS_GATEWAY_PUBLIC_RPS:1000}
     private-requests-per-second: ${MAPS_GATEWAY_PRIVATE_RPS:100}
+    public-client-requests-per-second: ${MAPS_GATEWAY_PUBLIC_CLIENT_RPS:100}
+    private-client-requests-per-second: ${MAPS_GATEWAY_PRIVATE_CLIENT_RPS:30}
+    sign-in-client-requests-per-hour: ${MAPS_GATEWAY_SIGN_IN_CLIENT_RPH:30}
 spring:
   cloud:
+    discovery:
+      enabled: false
     gateway:
+      # The proxy ends TLS, so a same-origin browser request reaches this gateway looking cross-origin (http here,
+      # https in Origin). Allowing the one public origin lets it through and refuses every other origin.
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${MAPS_PUBLIC_ORIGIN}
+            allowedMethods:
+            - GET
+            - HEAD
+            - POST
       httpclient:
         connect-timeout: 300
         response-timeout: 3s
@@ -22,6 +52,7 @@ spring:
           type: fixed
           max-connections: 64
           acquire-timeout: 500
+        # Used only for the https edge hop; reactor-netty drops it for the plain http backends.
         ssl:
           use-insecure-trust-manager: false
           key-store: ${MAPS_GATEWAY_TLS_KEY_STORE}
@@ -29,3 +60,17 @@ spring:
           key-store-password: ${MAPS_GATEWAY_TLS_KEY_STORE_PASSWORD}
           trusted-x509-certificates: ${MAPS_GATEWAY_TLS_TRUST_CERTIFICATES}
           handshake-timeout: 500ms
+management:
+  # Never published and never proxied, so the public path serves no actuator.
+  server:
+    port: ${MAPS_GATEWAY_MANAGEMENT_PORT:9080}
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    # The legacy JWT filter's bean exists, but every admitted Maps request skips it and nothing else reaches it.
+    redis:
+      enabled: false
+  tracing:
+    enabled: false

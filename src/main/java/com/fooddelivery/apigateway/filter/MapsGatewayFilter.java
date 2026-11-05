@@ -5,11 +5,15 @@ import com.fooddelivery.apigateway.security.MapsRoutes;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.nio.charset.StandardCharsets;
+import io.netty.util.NetUtil;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -20,6 +24,7 @@ import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -34,16 +39,28 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
     private final LongSupplier monotonic;
     private final ConcurrentHashMap<String,Bucket> totals = new ConcurrentHashMap<>();
     private final Cache<String,Bucket> peers = Caffeine.newBuilder().maximumSize(10000).expireAfterAccess(Duration.ofMinutes(2)).build();
+    private final Cache<String,Bucket> signIns = Caffeine.newBuilder().maximumSize(10000).expireAfterAccess(Duration.ofHours(2)).build();
+    private final Function<ServerHttpRequest,String> clientAddress;
+    private static final long SECOND = 1_000_000_000L, HOUR = 3600*SECOND;
     private static final class Bucket {
         long start; int used; boolean initialized;
-        synchronized boolean take(long now, int limit) {
-            if (!initialized||now-start>=1_000_000_000L) {start=now;used=0;initialized=true;}
+        synchronized boolean take(long now, int limit, long window) {
+            if (!initialized||now-start>=window) {start=now;used=0;initialized=true;}
             if(used>=limit)return false;used++;return true;
         }
     }
-    public MapsGatewayFilter(MapsGatewayProperties properties) { this(properties,System::nanoTime); }
-    public MapsGatewayFilter(MapsGatewayProperties properties, LongSupplier monotonic) { this.properties=properties;this.monotonic=monotonic; }
+    public MapsGatewayFilter(MapsGatewayProperties properties, Function<ServerHttpRequest,String> clientAddress) { this(properties,clientAddress,System::nanoTime); }
+    public MapsGatewayFilter(MapsGatewayProperties properties, Function<ServerHttpRequest,String> clientAddress, LongSupplier monotonic) { this.properties=properties;this.clientAddress=clientAddress;this.monotonic=monotonic; }
+    /** One IPv6 customer holds a whole /64, so rotating within it must not mint new client buckets. */
+    static String clientKey(String address) {
+        byte[] raw=NetUtil.createByteArrayFromIpAddressString(address);
+        if(raw==null||raw.length!=16||Arrays.equals(Arrays.copyOf(raw,8),new byte[8]))return address;
+        return HexFormat.of().formatHex(raw,0,8);
+    }
     public static boolean admitted(ServerWebExchange exchange) { return Boolean.TRUE.equals(exchange.getAttribute(ADMITTED)); }
+    private static Mono<Void> refuse(ServerWebExchange exchange, String retryAfter) {
+        exchange.getResponse().getHeaders().set("Retry-After",retryAfter);return fail(exchange,HttpStatus.TOO_MANY_REQUESTS,"ADMISSION_EXCEEDED");
+    }
     @Override public int getOrder() { return -100; }
     @Override public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path=exchange.getRequest().getURI().getPath();
@@ -71,13 +88,18 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
         if(exchange.getRequest().getMethod()!=org.springframework.http.HttpMethod.POST
                 &&(exchange.getRequest().getHeaders().getContentLength()>0||exchange.getRequest().getHeaders().containsKey(HttpHeaders.TRANSFER_ENCODING)))
             return fail(exchange,HttpStatus.BAD_REQUEST,"BODY_NOT_ALLOWED");
-        String population=policy.publicRoute()?"public":"private";
-        int limit=(policy.publicRoute()?properties.getPublicRequestsPerSecond():properties.getPrivateRequestsPerSecond())/properties.getMaximumReplicas();
-        String address=exchange.getRequest().getRemoteAddress()==null?"unknown":exchange.getRequest().getRemoteAddress().getHostString();
+        // Session lifecycle has its own population, so a private-resource flood cannot stop sign-in or sign-out.
+        // Client buckets are checked first: a request refused for its own client never spends the shared total.
+        String population=policy.publicRoute()?"public":policy.operation().startsWith("session-")?"session":"private";
+        int replicas=properties.getMaximumReplicas();
+        int total=(policy.publicRoute()?properties.getPublicRequestsPerSecond():properties.getPrivateRequestsPerSecond())/replicas;
+        int perClient=(policy.publicRoute()?properties.getPublicClientRequestsPerSecond():properties.getPrivateClientRequestsPerSecond())/replicas;
+        String client=clientKey(clientAddress.apply(exchange.getRequest()));
         long now=monotonic.getAsLong();
-        if(!totals.computeIfAbsent(population,k->new Bucket()).take(now,limit)||!peers.get(population+":"+address,k->new Bucket()).take(now,limit)) {
-            exchange.getResponse().getHeaders().set("Retry-After","1");return fail(exchange,HttpStatus.TOO_MANY_REQUESTS,"ADMISSION_EXCEEDED");
-        }
+        if(!peers.get(population+":"+client,k->new Bucket()).take(now,perClient,SECOND))return refuse(exchange,"1");
+        if((policy.operation().equals("session-otp")||policy.operation().equals("session-login"))
+                &&!signIns.get(client,k->new Bucket()).take(now,properties.getSignInClientRequestsPerHour()/replicas,HOUR))return refuse(exchange,"3600");
+        if(!totals.computeIfAbsent(population,k->new Bucket()).take(now,total,SECOND))return refuse(exchange,"1");
         var request=exchange.getRequest().mutate().headers(headers->{
             for(String header:List.of("X-User-Id","X-User-Roles","X-User-Phone","X-Session-Id","X-Identity-Signature","X-Issued-At","X-Client-Fingerprint",
                     "Forwarded","X-Forwarded-For","X-Forwarded-Host","X-Forwarded-Proto","X-Forwarded-Port","X-Forwarded-Prefix","X-Forwarded-Client-Cert",

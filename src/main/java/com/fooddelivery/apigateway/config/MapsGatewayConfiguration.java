@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(MapsGatewayProperties.class)
 public class MapsGatewayConfiguration {
     @Bean MapsCorsFilter mapsCorsFilter(){return new MapsCorsFilter();}
-    @Bean MapsGatewayFilter mapsGatewayFilter(MapsGatewayProperties properties) { return new MapsGatewayFilter(properties); }
+    @Bean MapsGatewayFilter mapsGatewayFilter(MapsGatewayProperties properties, RateLimiterConfig limiter) { return new MapsGatewayFilter(properties,limiter::clientAddress); }
     @Bean
     @ConditionalOnProperty(name="gateway.maps.enabled",havingValue="true")
     RouteLocator mapsRoutes(MapsGatewayProperties properties, RouteLocatorBuilder builder, HttpClientProperties client) {
