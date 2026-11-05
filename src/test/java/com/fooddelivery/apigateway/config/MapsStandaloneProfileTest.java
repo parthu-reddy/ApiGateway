@@ -172,6 +172,11 @@ class MapsStandaloneProfileTest {
         assertEquals(403, other.statusCode(), other.body());
     }
 
+    @Test void frontendLogControllerIsUnavailableOnMaps() throws Exception {
+        assertFalse(context.containsBean("frontendLogController"));
+        assertEquals(404, send(port, "POST", "/api/logs", Map.of("Content-Type", "application/json")).statusCode());
+    }
+
     @Test void anythingTheMapsContractDoesNotDeclareIsRefused() throws Exception {
         assertEquals(404, send(port, "GET", "/api/v1/auth/session", Map.of()).statusCode());
     }

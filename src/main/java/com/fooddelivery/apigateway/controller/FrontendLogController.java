@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.List;
 
 @RestController
+@org.springframework.context.annotation.Profile("!maps")
 @lombok.extern.slf4j.Slf4j
 public class FrontendLogController {
 

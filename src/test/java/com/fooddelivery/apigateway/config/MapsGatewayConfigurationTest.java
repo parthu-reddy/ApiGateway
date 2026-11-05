@@ -58,7 +58,7 @@ class MapsGatewayConfigurationTest {
     @Test void everyRouteOnABackendThatMayBePlainStripsCredentials(){
         String hash="a".repeat(64);
         for(String path:List.of("/public/"+hash+"/basemap.json","/assets/"+hash+"/styles/streets.json","/assets/"+hash+"/glyphs/0-255.pbf",
-                "/api/v1/countries/IN/postal-codes/560001","/api/v1/postal-codes/at-point","/api/v1/routes/calculate")){
+                "/api/v1/countries/IN/postal-codes/560001","/api/v1/postal-codes/at-point","/api/v1/routes/calculate","/api/v1/routes/capabilities","/api/v1/routes/directions")){
             var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(path);
             assertNotNull(policy,path);assertTrue(policy.publicRoute(),path);
             assertTrue(List.of("public","assets","postal","routing").contains(policy.backend()),path);
@@ -67,6 +67,27 @@ class MapsGatewayConfigurationTest {
             var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(path);
             assertEquals("edge",policy.backend(),path);assertFalse(policy.publicRoute(),path);
         }
+    }
+    @Test void foodDeliveryKeepsItsFrontendLogController() {
+        try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
+            context.getEnvironment().setActiveProfiles("food-delivery");
+            context.register(com.fooddelivery.apigateway.controller.FrontendLogController.class);
+            context.refresh();
+            assertEquals(1, context.getBeansOfType(com.fooddelivery.apigateway.controller.FrontendLogController.class).size());
+        }
+    }
+    @Test void directionsPanelPathsUseOnlyTheirDeclaredRoutingMethods() {
+        for (String base : List.of("", "/maps-service")) {
+            for (var entry : java.util.Map.of("capabilities", org.springframework.http.HttpMethod.GET,
+                    "directions", org.springframework.http.HttpMethod.POST).entrySet()) {
+                var policy = com.fooddelivery.apigateway.security.MapsRoutes.classify(base + "/api/v1/routes/" + entry.getKey());
+                assertNotNull(policy);
+                assertEquals("routing", policy.backend());
+                assertTrue(policy.publicRoute());
+                assertEquals(java.util.Set.of(entry.getValue()), policy.methods());
+            }
+        }
+        assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify("/api/v1/routes/directions/private"));
     }
     @Test void thePublicOriginIsRequiredAndMustBeOneHttpsOrigin(){
         for(String refused:java.util.Arrays.asList(null,"${MAPS_PUBLIC_ORIGIN}","http://maps.test","https://maps.test/","https://maps.test/maps","*")){
