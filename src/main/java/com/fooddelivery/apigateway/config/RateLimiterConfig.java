@@ -65,7 +65,7 @@ public class RateLimiterConfig {
         };
     }
 
-    private String clientAddress(ServerHttpRequest request) {
+    public String clientAddress(ServerHttpRequest request) {
         InetSocketAddress peer = request.getRemoteAddress();
         if (peer == null || peer.getAddress() == null) {
             return "unknown";

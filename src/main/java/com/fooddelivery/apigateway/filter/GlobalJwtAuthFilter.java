@@ -101,6 +101,9 @@ public class GlobalJwtAuthFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        if (MapsGatewayFilter.admitted(exchange)) {
+            return chain.filter(exchange);
+        }
         if (exchange.getRequest().getMethod().matches("OPTIONS")) {
             return chain.filter(exchange);
         }

@@ -138,6 +138,15 @@ class GlobalJwtAuthFilterEntitlementsTest {
         assertEquals(HttpStatus.UNAUTHORIZED,run("/api/v1/auth/session/refresh",token(4,NOW.plusSeconds(60)),false).getResponse().getStatusCode());
         assertEquals(0,routed.get());
     }
+    @ParameterizedTest @ValueSource(strings={"/api/v1/users/profile","/api/v1/auth/session/refresh","/api/v1/auth/logout"})
+    void ambiguousSessionPropertiesNeverReachAProtectedRouteOrMintIdentity(String path) {
+        String ambiguous=session(SID).replace("\"purpose\":\"LOGIN\"", "\"purpose\":\"ADMIN\",\"purpose\":\"LOGIN\"");
+        when(values.multiGet(LOOKUP)).thenReturn(Mono.just(Arrays.asList(null,"4",ambiguous)));
+        assertEquals(HttpStatus.UNAUTHORIZED,run(path,token(4,NOW.plusSeconds(60)),false).getResponse().getStatusCode());
+        assertEquals(0,routed.get());
+        verify(identity,never()).sign(any(),any(),any(),any(),anyLong());
+        verify(values).multiGet(LOOKUP);
+    }
     private static String session(String id) {
         return "[{\"sessionId\":\""+id+"\",\"purpose\":\"LOGIN\",\"absoluteExpiresAt\":\"2026-11-02T12:00:00Z\"}]";
     }
