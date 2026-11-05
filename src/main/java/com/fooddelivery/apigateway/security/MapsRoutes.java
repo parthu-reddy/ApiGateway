@@ -38,6 +38,8 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/countries/IN/postal-codes/[0-9]{6}(?:/(?:geometry|neighbors))?")
                 || p.equals("/api/v1/countries/IN/postal-codes/at-point") || p.equals("/api/v1/postal-codes/at-point"))
             return new Policy("postal", "postal-read", true, READ);
+        if (p.equals("/api/v1/routes/capabilities")) return new Policy("routing", "route-capabilities", true, READ);
+        if (p.equals("/api/v1/routes/directions")) return new Policy("routing", "route-directions", true, POST);
         if (p.equals("/api/v1/routes/calculate")) return new Policy("routing", "route-calculate", true, POST);
         return null;
     }
