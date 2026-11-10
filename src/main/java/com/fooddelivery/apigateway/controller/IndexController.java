@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 @RestController
+@org.springframework.context.annotation.Profile("!maps")
 @lombok.extern.slf4j.Slf4j
 public class IndexController {
     @java.lang.SuppressWarnings("all")

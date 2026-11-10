@@ -31,6 +31,9 @@ gateway:
     private-client-requests-per-second: ${MAPS_GATEWAY_PRIVATE_CLIENT_RPS:30}
     sign-in-client-requests-per-hour: ${MAPS_GATEWAY_SIGN_IN_CLIENT_RPH:30}
 spring:
+  web:
+    resources:
+      static-locations: classpath:/maps-gateway-serves-no-static-files/
   cloud:
     discovery:
       enabled: false
@@ -45,6 +48,7 @@ spring:
             - GET
             - HEAD
             - POST
+            - PUT
       httpclient:
         connect-timeout: 300
         response-timeout: 3s
@@ -73,4 +77,9 @@ management:
     redis:
       enabled: false
   tracing:
+    enabled: false
+
+# Controllers and static handlers bypass gateway filters; Maps exposes neither UI nor API docs here.
+springdoc:
+  api-docs:
     enabled: false

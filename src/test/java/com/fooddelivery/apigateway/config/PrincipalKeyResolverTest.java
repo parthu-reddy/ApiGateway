@@ -95,6 +95,17 @@ class PrincipalKeyResolverTest {
         assertNotEquals(dining, guest, "RedisRateLimiter keys by this value alone: one value would be one bucket");
     }
 
+    /** DiningPickupBooking Phase 3: a guest's join and a pickup's handover guess 4-digit codes, so neither shares a bucket. */
+    @Test
+    void theCodeGuessingRoutesHaveTheirOwnBuckets() {
+        ServerWebExchange join = onRoute(MockServerWebExchange.from(signedIn()), "dine-in-join");
+        ServerWebExchange rest = onRoute(MockServerWebExchange.from(signedIn()), "dine-in");
+        ServerWebExchange handover = onRoute(MockServerWebExchange.from(signedIn()), "pickup-handover");
+        assertEquals("dine-in-join|user:" + USER, key(join));
+        assertEquals("dine-in|user:" + USER, key(rest));
+        assertEquals("pickup-handover|user:" + USER, key(handover));
+    }
+
     @Test
     void aClientSentUserIdCannotPickTheBucket() {
         MockServerHttpRequest spoofed = MockServerHttpRequest.post("/api/v1/dining/outlets/o/sessions")
