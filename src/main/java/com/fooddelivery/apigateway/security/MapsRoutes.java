@@ -70,6 +70,7 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/resources/"+UUID+"(?:/(?:history|export))?")) return new Policy("edge", "resource-read", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt")) return new Policy("edge", "resource-tile", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/export-jobs")) return new Policy("edge", "resource-export-job", false, POST);
+        if (p.equals("/api/v1/resource-jobs")) return new Policy("edge", "resource-job", false, READ);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "resource-job-execute", false, POST);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"(?:/download)?")) return new Policy("edge", "resource-job", false, READ);
         if (p.equals("/api/v1/search") || p.equals("/api/v1/reverse") || p.equals("/api/v1/pois") || p.matches("/api/v1/features/osm:(?:node|way|relation):[1-9][0-9]{0,18}"))
@@ -77,7 +78,7 @@ public final class MapsRoutes {
         if (p.equals("/terrain/capabilities.json") || p.matches("/terrain/"+HASH+"/(?:dem|hillshade)/1[2-4]/(?:0|[1-9][0-9]{0,4})/(?:0|[1-9][0-9]{0,4})\\.png"))
             return new Policy("edge", "terrain-read", true, Set.of(HttpMethod.GET,HttpMethod.HEAD));
         if (p.equals("/api/v1/capabilities")) return new Policy("edge", "capabilities", true, READ);
-        if (p.matches("/public/"+HASH+"/(?:basemap\\.(?:json|pmtiles)|schema\\.json|tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt)"))
+        if (p.matches("/public/"+HASH+"/(?:basemap\\.(?:json|pmtiles)|schema\\.json|(?:tiles|filtered)/[0-9]+/[0-9]+/[0-9]+\\.mvt)"))
             return new Policy("public", "public-snapshot", true, ASSET);
         if (p.matches("/assets/"+HASH+"/(?:release\\.json|styles/(?:streets|dark)\\.json|fonts/(?:NotoSans(?:Devanagari|Kannada)?-Regular\\.ttf|OFL\\.txt|font-lock\\.json)|glyphs/(?:0-255|2304-2559|3072-3327)\\.pbf|sprites/poi(?:@2x)?\\.(?:png|json)|schema\\.json|capabilities\\.json|ATTRIBUTION\\.txt)"))
             return new Policy("assets", "map-asset", true, ASSET);

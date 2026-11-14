@@ -217,13 +217,14 @@ class MapsGatewayConfigurationTest {
         String id="11111111-1111-4111-8111-111111111111";
         for(String alias:List.of("","/maps-service")){
             for(var entry:java.util.Map.of("/api/v1/resources/"+id+"/export-jobs",org.springframework.http.HttpMethod.POST,
+                    "/api/v1/resource-jobs",org.springframework.http.HttpMethod.GET,
                     "/api/v1/resource-jobs/"+id,org.springframework.http.HttpMethod.GET,
                     "/api/v1/resource-jobs/"+id+"/execute",org.springframework.http.HttpMethod.POST,
                     "/api/v1/resource-jobs/"+id+"/download",org.springframework.http.HttpMethod.GET).entrySet()){
                 var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+entry.getKey());
                 assertNotNull(policy,entry.getKey());assertEquals("edge",policy.backend());assertFalse(policy.publicRoute());assertEquals(java.util.Set.of(entry.getValue()),policy.methods());
             }
-            for(String path:List.of("/api/v1/resource-jobs/"+id+"/execute/extra","/api/v1/resource-jobs/"+id+"/download/extra","/api/v1/machine/resource-jobs/"+id+"/execute","/api/v1/resource-jobs/not-a-uuid/execute"))assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+path),path);
+            for(String path:List.of("/api/v1/resource-jobs/","/api/v1/resource-jobs-extra","/api/v1/resource-jobs/"+id+"/execute/extra","/api/v1/resource-jobs/"+id+"/download/extra","/api/v1/machine/resource-jobs/"+id+"/execute","/api/v1/resource-jobs/not-a-uuid/execute"))assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+path),path);
         }
     }
 

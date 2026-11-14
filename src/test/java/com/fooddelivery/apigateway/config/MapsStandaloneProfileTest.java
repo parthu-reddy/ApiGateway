@@ -157,6 +157,17 @@ class MapsStandaloneProfileTest {
         for (String header : CREDENTIALS.keySet()) assertNull(received.headers().get(header), header + " reached a plain http backend");
     }
 
+    @Test void filteredTilesUseThePublicBackendWithoutCredentials() throws Exception {
+        String path = "/public/" + "a".repeat(64) + "/filtered/14/11723/7596.mvt";
+        var response = send(port, "GET", path + "?layers=roads,pois", CREDENTIALS);
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals("{\"backend\":\"plain\"}", response.body());
+        var received = seen.get("plain");
+        assertEquals(path, received.path());
+        for (String header : CREDENTIALS.keySet()) assertNull(received.headers().get(header));
+        assertEquals(404, send(port, "GET", path + "/extra", Map.of()).statusCode());
+    }
+
     @Test void edgeIsReachedOverMutualTlsWithTheSessionCookie() throws Exception {
         var response = send(port, "GET", "/api/v1/maps-session/session", Map.of("Cookie", "maps=secret"));
         assertEquals(200, response.statusCode(), response.body());
@@ -199,6 +210,21 @@ class MapsStandaloneProfileTest {
         }
         var other = new java.util.HashMap<>(headers);other.put("Origin", "https://other.test");
         assertEquals(403, send(port, "PUT", canonical, other).statusCode());
+    }
+
+    @Test void privateExportJobListUsesTheMtlsEdgeAtBothBases() throws Exception {
+        String canonical = "/api/v1/resource-jobs";
+        for (String base : java.util.List.of("", "/maps-service")) {
+            var response = send(port, "GET", base + canonical, Map.of("Origin", ORIGIN, "Cookie", "maps=opaque"));
+            assertEquals(200, response.statusCode(), response.body());
+            assertEquals("{\"backend\":\"edge\"}", response.body());
+            var received = seen.get("edge");
+            assertEquals(canonical, received.path());
+            assertTrue(received.clientCertificate());
+            assertEquals(java.util.List.of("maps=opaque"), received.headers().get("Cookie"));
+            assertEquals(405, send(port, "POST", base + canonical, Map.of("Origin", ORIGIN)).statusCode());
+            assertEquals(403, send(port, "GET", base + canonical, Map.of("Origin", "https://other.test")).statusCode());
+        }
     }
 
 }
