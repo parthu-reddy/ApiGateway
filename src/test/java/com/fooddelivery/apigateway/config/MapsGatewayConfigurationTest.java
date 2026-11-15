@@ -228,6 +228,24 @@ class MapsGatewayConfigurationTest {
         }
     }
 
+    @Test void resourceGrantsUseOnlyExactPrivateWritePaths() {
+        String id = "11111111-1111-4111-8111-111111111111";
+        for (String alias : List.of("", "/maps-service")) {
+            String base = alias + "/api/v1/resource-grants/";
+            for (String kind : List.of("area", "saved_route", "metadata")) {
+                var policy = com.fooddelivery.apigateway.security.MapsRoutes.classify(base + kind + "/" + id);
+                assertNotNull(policy);
+                assertEquals("edge", policy.backend());
+                assertFalse(policy.publicRoute());
+                assertEquals(java.util.Set.of(org.springframework.http.HttpMethod.POST), policy.methods());
+            }
+            for (String path : List.of("area/not-a-uuid", "road/" + id, "area/" + id + "/more")) {
+                assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(base + path));
+                assertTrue(com.fooddelivery.apigateway.security.MapsRoutes.reserved(base + path));
+            }
+        }
+    }
+
     @Test void terrainReadsAreExactPublicOperations() {
         String hash="a".repeat(64);
         for(String alias:List.of("","/maps-service")){

@@ -17,7 +17,8 @@ public final class MapsRoutes {
     public static boolean reserved(String path) {
         String p = canonical(path);
         return path.startsWith("/maps-service/") || p.startsWith("/api/v1/maps-session")
-                || p.startsWith("/api/v1/resources") || p.startsWith("/api/v1/resource-jobs") || p.startsWith("/api/v1/machine/resource-jobs");
+                || p.startsWith("/api/v1/resources") || p.startsWith("/api/v1/resource-grants")
+                || p.startsWith("/api/v1/resource-jobs") || p.startsWith("/api/v1/machine/resource-jobs");
     }
     public static Policy classify(String path) {
         String p = canonical(path);
@@ -70,6 +71,8 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/resources/"+UUID+"(?:/(?:history|export))?")) return new Policy("edge", "resource-read", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt")) return new Policy("edge", "resource-tile", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/export-jobs")) return new Policy("edge", "resource-export-job", false, POST);
+        if (p.matches("/api/v1/resource-grants/(?:area|saved_route|metadata)/"+UUID))
+            return new Policy("edge", "resource-grant", false, POST);
         if (p.equals("/api/v1/resource-jobs")) return new Policy("edge", "resource-job", false, READ);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "resource-job-execute", false, POST);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"(?:/download)?")) return new Policy("edge", "resource-job", false, READ);
