@@ -59,11 +59,15 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/roads/(?:preview|sections)")) return new Policy("edge", "routing-mutation", false, POST);
         if (p.equals("/api/v1/road-metadata/records") || p.matches("/api/v1/road-metadata/templates/"+UUID+"/retire"))
             return new Policy("edge", "routing-metadata", false, POST);
+        if (p.matches("/api/v1/road-metadata/records/"+UUID+"/(?:publish|withdraw)"))
+            return new Policy("edge", "routing-metadata", false, POST);
         if (p.equals("/api/v1/road-metadata/templates")) return new Policy("edge", "routing-metadata", false, Set.of(HttpMethod.GET,HttpMethod.POST));
         if (p.matches("/api/v1/road-metadata/records/"+UUID)) return new Policy("edge", "routing-metadata", false, Set.of(HttpMethod.GET,HttpMethod.PUT));
         if (p.matches("/api/v1/road-metadata/templates/"+UUID)) return new Policy("edge", "routing-metadata", false, Set.of(HttpMethod.PUT));
         if (p.matches("/api/v1/road-metadata/(?:sections/"+UUID+"|records/"+UUID+"/(?:history|"+REVISION+")|templates/"+UUID+"/"+REVISION+")"))
             return new Policy("edge", "routing-metadata", false, READ);
+        if (p.matches("/api/v1/inspection/public-routes/"+HASH+"/[0-2]"))
+            return new Policy("edge", "public-road-inspection", true, READ);
         if (p.matches("/api/v1/inspection/(?:saved-routes|saved-route-roads|road-sections)/"+UUID+"/"+REVISION)
                 || p.matches("/api/v1/inspection/routes/"+HASH+"/[0-2]"))
             return new Policy("edge", "routing-inspection", false, READ);

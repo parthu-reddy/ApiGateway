@@ -191,13 +191,23 @@ class MapsGatewayConfigurationTest {
         for(String kind:List.of("saved-routes","road-sections")) declared.put("/api/v1/inspection/"+kind+"/"+id+"/1",java.util.Set.of(get));
         String selection="a".repeat(64);
         declared.put("/api/v1/inspection/routes/"+selection+"/0",java.util.Set.of(get));
+        declared.put("/api/v1/road-metadata/records/"+id+"/publish",java.util.Set.of(post));
+        declared.put("/api/v1/road-metadata/records/"+id+"/withdraw",java.util.Set.of(post));
+        for (String alias : List.of("", "/maps-service")) {
+            var publicInspection = com.fooddelivery.apigateway.security.MapsRoutes.classify(
+                    alias+"/api/v1/inspection/public-routes/"+selection+"/0");
+            assertNotNull(publicInspection);
+            assertEquals("edge", publicInspection.backend());
+            assertTrue(publicInspection.publicRoute());
+            assertEquals(java.util.Set.of(get), publicInspection.methods());
+        }
         declared.put("/api/v1/inspection/saved-route-roads/"+id+"/1",java.util.Set.of(get));
         for(String alias:List.of("","/maps-service")) {
             for(var entry:declared.entrySet()) {
                 var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+entry.getKey());
                 assertNotNull(policy,entry.getKey());assertEquals("edge",policy.backend());assertFalse(policy.publicRoute());assertEquals(entry.getValue(),policy.methods());
             }
-            for(String refused:List.of("/api/v1/saved-routes-extra","/api/v1/saved-routes/"+id+"/revisions/01","/api/v1/roads/catalog/all","/api/v1/roads/sections/"+id+"/approve","/api/v1/road-metadata/records/"+id+"/publish","/api/v1/inspection/saved-routes-roads/"+id+"/1","/api/v1/inspection/routes/"+selection+"/3","/api/v1/inspection/routes/not-a-selection/0","/api/v1/inspection/saved-route-roads/"+id+"/01","/api/v1/inspection/road-sections/"+id+"/01")) assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+refused),refused);
+            for(String refused:List.of("/api/v1/saved-routes-extra","/api/v1/saved-routes/"+id+"/revisions/01","/api/v1/roads/catalog/all","/api/v1/roads/sections/"+id+"/approve","/api/v1/road-metadata/records/"+id+"/approve","/api/v1/inspection/saved-routes-roads/"+id+"/1","/api/v1/inspection/routes/"+selection+"/3","/api/v1/inspection/routes/not-a-selection/0","/api/v1/inspection/saved-route-roads/"+id+"/01","/api/v1/inspection/road-sections/"+id+"/01")) assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+refused),refused);
         }
     }
 
