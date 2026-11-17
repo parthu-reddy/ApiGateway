@@ -44,6 +44,8 @@ spring:
         cors-configurations:
           '[/**]':
             allowedOrigins: ${MAPS_PUBLIC_ORIGIN}
+            # Spring checks same-origin private POST/PUT behind the proxy as CORS requests, so they stay allowed here;
+            # MapsCorsFilter strips every grant from private routes and narrows each public preflight to its route.
             allowedMethods:
             - GET
             - HEAD
