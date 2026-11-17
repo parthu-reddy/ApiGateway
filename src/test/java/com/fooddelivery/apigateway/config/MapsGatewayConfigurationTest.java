@@ -223,7 +223,7 @@ class MapsGatewayConfigurationTest {
     }
 
 
-    @Test void personExportJobsAreExactPrivateOperations() {
+    @Test void exportJobsAreExactPrivateOperations() {
         String id="11111111-1111-4111-8111-111111111111";
         for(String alias:List.of("","/maps-service")){
             for(var entry:java.util.Map.of("/api/v1/resources/"+id+"/export-jobs",org.springframework.http.HttpMethod.POST,
@@ -234,7 +234,10 @@ class MapsGatewayConfigurationTest {
                 var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+entry.getKey());
                 assertNotNull(policy,entry.getKey());assertEquals("edge",policy.backend());assertFalse(policy.publicRoute());assertEquals(java.util.Set.of(entry.getValue()),policy.methods());
             }
-            for(String path:List.of("/api/v1/resource-jobs/","/api/v1/resource-jobs-extra","/api/v1/resource-jobs/"+id+"/execute/extra","/api/v1/resource-jobs/"+id+"/download/extra","/api/v1/machine/resource-jobs/"+id+"/execute","/api/v1/resource-jobs/not-a-uuid/execute"))assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+path),path);
+            var machine=com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+"/api/v1/machine/resource-jobs/"+id+"/execute");
+            assertNotNull(machine);assertEquals("machine-job-execute",machine.operation());assertEquals("edge",machine.backend());
+            assertFalse(machine.publicRoute());assertEquals(java.util.Set.of(org.springframework.http.HttpMethod.POST),machine.methods());
+            for(String path:List.of("/api/v1/resource-jobs/","/api/v1/resource-jobs-extra","/api/v1/resource-jobs/"+id+"/execute/extra","/api/v1/resource-jobs/"+id+"/download/extra","/api/v1/machine/resource-jobs/"+id+"/download","/api/v1/machine/resource-jobs/not-a-uuid/execute","/api/v1/resource-jobs/not-a-uuid/execute"))assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias+path),path);
         }
     }
 

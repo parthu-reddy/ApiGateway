@@ -91,6 +91,37 @@ class MapsGatewayFilterTest {
         filter.filter(options,x->{fail("private preflight reached legacy OPTIONS bypass");return Mono.empty();}).block();
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED,options.getResponse().getStatusCode());
     }
+    @Test void machineJobExecutionForwardsOneBearerOnItsExactPostPath() {
+        String path="/api/v1/machine/resource-jobs/11111111-1111-4111-8111-111111111111/execute";
+        String credential="Bearer "+"a".repeat(64);
+        var filter=new MapsGatewayFilter(configured(),PEER);
+        var legacy=new GlobalJwtAuthFilter();
+        for(String prefix:List.of("","/maps-service")){
+            var valid=exchange(MockServerHttpRequest.post(prefix+path).header(HttpHeaders.AUTHORIZATION,credential)
+                    .header("X-User-Id","spoofed").build());
+            filter.filter(valid,x->legacy.filter(x,clean->{
+                assertEquals(List.of(credential),clean.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION));
+                assertNull(clean.getRequest().getHeaders().getFirst("X-User-Id"));
+                return clean.getResponse().setComplete();
+            })).block();
+            assertNull(valid.getResponse().getStatusCode());
+            assertEquals("private, no-store",valid.getResponse().getHeaders().getCacheControl());
+        }
+        var missing=exchange(MockServerHttpRequest.post(path).build());
+        var duplicate=exchange(MockServerHttpRequest.post(path).header(HttpHeaders.AUTHORIZATION,credential,credential).build());
+        var cookie=exchange(MockServerHttpRequest.post(path).header(HttpHeaders.AUTHORIZATION,credential).header(HttpHeaders.COOKIE,"session=opaque").build());
+        var origin=exchange(MockServerHttpRequest.post(path).header(HttpHeaders.AUTHORIZATION,credential).header(HttpHeaders.ORIGIN,"https://maps.test").build());
+        var csrf=exchange(MockServerHttpRequest.post(path).header(HttpHeaders.AUTHORIZATION,credential).header("X-CSRF-Token","opaque").build());
+        var body=exchange(MockServerHttpRequest.post(path).header(HttpHeaders.AUTHORIZATION,credential).header(HttpHeaders.CONTENT_LENGTH,"1").body("x"));
+        var get=exchange(MockServerHttpRequest.get(path).header(HttpHeaders.AUTHORIZATION,credential).build());
+        var person=exchange(MockServerHttpRequest.post(path.replace("/machine","")).header(HttpHeaders.AUTHORIZATION,credential).build());
+        for(var refusal:java.util.Map.of(missing,HttpStatus.UNAUTHORIZED,duplicate,HttpStatus.UNAUTHORIZED,cookie,HttpStatus.BAD_REQUEST,
+                origin,HttpStatus.BAD_REQUEST,csrf,HttpStatus.BAD_REQUEST,body,HttpStatus.PAYLOAD_TOO_LARGE,get,HttpStatus.METHOD_NOT_ALLOWED,person,HttpStatus.BAD_REQUEST).entrySet()){
+            filter.filter(refusal.getKey(),x->{fail("refused worker request was forwarded");return Mono.empty();}).block();
+            assertEquals(refusal.getValue(),refusal.getKey().getResponse().getStatusCode());
+        }
+    }
+
     @Test void unknownInternalEncodedAndMixedCredentialsFailBeforeForwarding() {
         var filter=new MapsGatewayFilter(configured(),PEER);
         for(var request:new MockServerHttpRequest[]{

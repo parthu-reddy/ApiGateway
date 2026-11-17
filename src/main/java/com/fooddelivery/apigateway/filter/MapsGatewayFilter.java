@@ -81,10 +81,19 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
             if(List.of("token","access_token","id_token","credential","authorization").contains(key.toLowerCase(Locale.ROOT)))
                 return fail(exchange,HttpStatus.BAD_REQUEST,"URL_CREDENTIAL_REFUSED");
         if(!policy.methods().contains(exchange.getRequest().getMethod()))return fail(exchange,HttpStatus.METHOD_NOT_ALLOWED,"METHOD_NOT_ALLOWED");
-        if(!policy.publicRoute()&&exchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION))
-            return fail(exchange,HttpStatus.BAD_REQUEST,"MIXED_CREDENTIAL_REFUSED");
         var method=exchange.getRequest().getMethod();
         String operation=policy.operation();
+        boolean machine=operation.equals("machine-job-execute");
+        var requestHeaders=exchange.getRequest().getHeaders();
+        if(machine) {
+            if(requestHeaders.containsKey(HttpHeaders.COOKIE)||requestHeaders.containsKey(HttpHeaders.ORIGIN)||requestHeaders.containsKey("X-CSRF-Token"))
+                return fail(exchange,HttpStatus.BAD_REQUEST,"MIXED_CREDENTIAL_REFUSED");
+            var credentials=requestHeaders.getOrEmpty(HttpHeaders.AUTHORIZATION);
+            if(credentials.size()!=1||!credentials.getFirst().matches("Bearer [0-9a-f]{64}"))
+                return fail(exchange,HttpStatus.UNAUTHORIZED,"INVALID_MACHINE_CREDENTIAL");
+        } else if(!policy.publicRoute()&&requestHeaders.containsKey(HttpHeaders.AUTHORIZATION)) {
+            return fail(exchange,HttpStatus.BAD_REQUEST,"MIXED_CREDENTIAL_REFUSED");
+        }
         boolean areaWrite = switch (operation) {
             case "area-collection", "area-lifecycle", "area-editor", "area-repair" -> HttpMethod.POST.equals(method);
             case "area-record" -> HttpMethod.PUT.equals(method);
@@ -93,7 +102,7 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
         boolean metadataWrite = (operation.equals("area-metadata") || operation.equals("routing-metadata") || operation.equals("routing-mutation"))
                 && (HttpMethod.POST.equals(method) || HttpMethod.PUT.equals(method));
         // Match the owning handlers' decoded envelope limits for area, metadata and annotation writes.
-        long maxBody = areaWrite ? 10_000_000
+        long maxBody = machine ? 0 : areaWrite ? 10_000_000
                 : metadataWrite ? 65_536
                 : operation.equals("spatial-relations") || operation.startsWith("analysis-") ? 1_048_576
                 : operation.equals("routing-annotation") ? 400_000

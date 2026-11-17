@@ -77,6 +77,7 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/resources/"+UUID+"/export-jobs")) return new Policy("edge", "resource-export-job", false, POST);
         if (p.matches("/api/v1/resource-grants/(?:area|saved_route|metadata)/"+UUID))
             return new Policy("edge", "resource-grant", false, POST);
+        if (p.matches("/api/v1/machine/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "machine-job-execute", false, POST);
         if (p.equals("/api/v1/resource-jobs")) return new Policy("edge", "resource-job", false, READ);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "resource-job-execute", false, POST);
         if (p.matches("/api/v1/resource-jobs/"+UUID+"(?:/download)?")) return new Policy("edge", "resource-job", false, READ);
