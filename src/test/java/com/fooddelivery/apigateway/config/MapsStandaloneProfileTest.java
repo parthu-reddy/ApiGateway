@@ -132,7 +132,7 @@ class MapsStandaloneProfileTest {
 
     private HttpResponse<String> send(int target, String method, String path, Map<String, String> headers) throws Exception {
         var request = HttpRequest.newBuilder(URI.create("http://localhost:" + target + path))
-                .method(method, method.equals("POST") ? HttpRequest.BodyPublishers.ofString("{}") : HttpRequest.BodyPublishers.noBody());
+                .method(method, (method.equals("POST") || method.equals("PUT")) ? HttpRequest.BodyPublishers.ofString("{}") : HttpRequest.BodyPublishers.noBody());
         headers.forEach(request::header);
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
@@ -157,6 +157,17 @@ class MapsStandaloneProfileTest {
         for (String header : CREDENTIALS.keySet()) assertNull(received.headers().get(header), header + " reached a plain http backend");
     }
 
+    @Test void filteredTilesUseThePublicBackendWithoutCredentials() throws Exception {
+        String path = "/public/" + "a".repeat(64) + "/filtered/14/11723/7596.mvt";
+        var response = send(port, "GET", path + "?layers=roads,pois", CREDENTIALS);
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals("{\"backend\":\"plain\"}", response.body());
+        var received = seen.get("plain");
+        assertEquals(path, received.path());
+        for (String header : CREDENTIALS.keySet()) assertNull(received.headers().get(header));
+        assertEquals(404, send(port, "GET", path + "/extra", Map.of()).statusCode());
+    }
+
     @Test void edgeIsReachedOverMutualTlsWithTheSessionCookie() throws Exception {
         var response = send(port, "GET", "/api/v1/maps-session/session", Map.of("Cookie", "maps=secret"));
         assertEquals(200, response.statusCode(), response.body());
@@ -178,6 +189,42 @@ class MapsStandaloneProfileTest {
     }
 
     @Test void anythingTheMapsContractDoesNotDeclareIsRefused() throws Exception {
-        assertEquals(404, send(port, "GET", "/api/v1/auth/session", Map.of()).statusCode());
+        var checks = new java.util.ArrayList<org.junit.jupiter.api.function.Executable>();
+        checks.add(()->assertFalse(context.containsBean("indexController")));
+        for (String path : java.util.List.of("/api/v1/auth/session", "/", "/index.html", "/v3/api-docs", "/swagger-ui.html", "/webjars/swagger-ui/index.html")) {
+            checks.add(()->assertEquals(404, send(port, "GET", path, Map.of()).statusCode(), path));
+        }
+        checks.add(()->assertEquals(404, send(port, "HEAD", "/", Map.of()).statusCode()));
+        org.junit.jupiter.api.Assertions.assertAll(checks);
     }
+    @Test void privateSavedAreaPutUsesTheDeclaredOriginAndCanonicalEdgeHop() throws Exception {
+        String canonical = "/api/v1/areas/11111111-1111-4111-8111-111111111111";
+        var headers = Map.of("Origin", ORIGIN, "Content-Type", "application/json", "Cookie", "maps=opaque",
+                "X-CSRF-Token", "fixture-proof", "If-Match", "fixture-etag", "Idempotency-Key", "fixture-key");
+        var response = send(port, "PUT", "/maps-service" + canonical, headers);
+        assertEquals(200, response.statusCode());
+        var received = seen.get("edge");assertEquals(canonical, received.path());assertTrue(received.clientCertificate());
+        for (String header : java.util.List.of("Cookie","X-CSRF-Token","If-Match","Idempotency-Key")) {
+            assertEquals(java.util.List.of(headers.get(header)), received.headers().entrySet().stream()
+                    .filter(entry -> entry.getKey().equalsIgnoreCase(header)).findFirst().orElseThrow().getValue(), header);
+        }
+        var other = new java.util.HashMap<>(headers);other.put("Origin", "https://other.test");
+        assertEquals(403, send(port, "PUT", canonical, other).statusCode());
+    }
+
+    @Test void privateExportJobListUsesTheMtlsEdgeAtBothBases() throws Exception {
+        String canonical = "/api/v1/resource-jobs";
+        for (String base : java.util.List.of("", "/maps-service")) {
+            var response = send(port, "GET", base + canonical, Map.of("Origin", ORIGIN, "Cookie", "maps=opaque"));
+            assertEquals(200, response.statusCode(), response.body());
+            assertEquals("{\"backend\":\"edge\"}", response.body());
+            var received = seen.get("edge");
+            assertEquals(canonical, received.path());
+            assertTrue(received.clientCertificate());
+            assertEquals(java.util.List.of("maps=opaque"), received.headers().get("Cookie"));
+            assertEquals(405, send(port, "POST", base + canonical, Map.of("Origin", ORIGIN)).statusCode());
+            assertEquals(403, send(port, "GET", base + canonical, Map.of("Origin", "https://other.test")).statusCode());
+        }
+    }
+
 }

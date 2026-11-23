@@ -22,6 +22,7 @@ import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -80,12 +81,35 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
             if(List.of("token","access_token","id_token","credential","authorization").contains(key.toLowerCase(Locale.ROOT)))
                 return fail(exchange,HttpStatus.BAD_REQUEST,"URL_CREDENTIAL_REFUSED");
         if(!policy.methods().contains(exchange.getRequest().getMethod()))return fail(exchange,HttpStatus.METHOD_NOT_ALLOWED,"METHOD_NOT_ALLOWED");
-        if(!policy.publicRoute()&&exchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION))
+        var method=exchange.getRequest().getMethod();
+        String operation=policy.operation();
+        boolean machine=operation.equals("machine-job-execute");
+        var requestHeaders=exchange.getRequest().getHeaders();
+        if(machine) {
+            if(requestHeaders.containsKey(HttpHeaders.COOKIE)||requestHeaders.containsKey(HttpHeaders.ORIGIN)||requestHeaders.containsKey("X-CSRF-Token"))
+                return fail(exchange,HttpStatus.BAD_REQUEST,"MIXED_CREDENTIAL_REFUSED");
+            var credentials=requestHeaders.getOrEmpty(HttpHeaders.AUTHORIZATION);
+            if(credentials.size()!=1||!credentials.getFirst().matches("Bearer [0-9a-f]{64}"))
+                return fail(exchange,HttpStatus.UNAUTHORIZED,"INVALID_MACHINE_CREDENTIAL");
+        } else if(!policy.publicRoute()&&requestHeaders.containsKey(HttpHeaders.AUTHORIZATION)) {
             return fail(exchange,HttpStatus.BAD_REQUEST,"MIXED_CREDENTIAL_REFUSED");
-        long maxBody=policy.operation().equals("route-calculate")?4096:8192;
+        }
+        boolean areaWrite = switch (operation) {
+            case "area-collection", "area-lifecycle", "area-editor", "area-repair" -> HttpMethod.POST.equals(method);
+            case "area-record" -> HttpMethod.PUT.equals(method);
+            default -> false;
+        };
+        boolean metadataWrite = (operation.equals("area-metadata") || operation.equals("routing-metadata") || operation.equals("routing-mutation"))
+                && (HttpMethod.POST.equals(method) || HttpMethod.PUT.equals(method));
+        // Match the owning handlers' decoded envelope limits for area, metadata and annotation writes.
+        long maxBody = machine ? 0 : areaWrite ? 10_000_000
+                : metadataWrite ? 65_536
+                : operation.equals("spatial-relations") || operation.startsWith("analysis-") ? 1_048_576
+                : operation.equals("routing-annotation") ? 400_000
+                : operation.equals("route-calculate") || operation.equals("route-directions") ? 4096 : 8192;
         if(exchange.getRequest().getHeaders().getContentLength()>maxBody)return fail(exchange,HttpStatus.PAYLOAD_TOO_LARGE,"PAYLOAD_TOO_LARGE");
         if(exchange.getRequest().getHeaders().containsKey(HttpHeaders.CONTENT_ENCODING))return fail(exchange,HttpStatus.UNSUPPORTED_MEDIA_TYPE,"REQUEST_ENCODING_REFUSED");
-        if(exchange.getRequest().getMethod()!=org.springframework.http.HttpMethod.POST
+        if(!HttpMethod.POST.equals(method)&&!areaWrite&&!metadataWrite
                 &&(exchange.getRequest().getHeaders().getContentLength()>0||exchange.getRequest().getHeaders().containsKey(HttpHeaders.TRANSFER_ENCODING)))
             return fail(exchange,HttpStatus.BAD_REQUEST,"BODY_NOT_ALLOWED");
         // Session lifecycle has its own population, so a private-resource flood cannot stop sign-in or sign-out.
@@ -118,7 +142,20 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
             }
         };
         var admitted=exchange.mutate().request(bounded).build();admitted.getAttributes().put(ADMITTED,true);
-        if(!policy.publicRoute())exchange.getResponse().getHeaders().setCacheControl("no-store");
+        if(!policy.publicRoute()) {
+            exchange.getResponse().getHeaders().setCacheControl("no-store");
+            // Netty appends upstream response headers after this filter runs.
+            // Finalize the private contract at commit, preserving all Vary axes.
+            exchange.getResponse().beforeCommit(()->{
+                var headers=exchange.getResponse().getHeaders();
+                headers.setCacheControl("private, no-store");
+                var vary=new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+                vary.addAll(headers.getVary());
+                if(vary.contains("*"))headers.setVary(List.of("*"));
+                else {vary.add("Cookie");vary.add("Authorization");headers.setVary(new java.util.ArrayList<>(vary));}
+                return Mono.empty();
+            });
+        }
         return chain.filter(admitted).onErrorResume(BodyRefused.class,refused->fail(exchange,
                 refused.tooLarge?HttpStatus.PAYLOAD_TOO_LARGE:HttpStatus.REQUEST_TIMEOUT,
                 refused.tooLarge?"PAYLOAD_TOO_LARGE":"UPLOAD_TIMEOUT"));
