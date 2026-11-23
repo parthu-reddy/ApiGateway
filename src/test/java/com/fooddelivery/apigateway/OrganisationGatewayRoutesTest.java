@@ -67,6 +67,32 @@ class OrganisationGatewayRoutesTest {
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,outsider.getResponse().getStatusCode());
     }
 
+    /**
+     * Dev serves the UI from two hostnames (the labouffe.in domain and the quick tunnel), and the page calls the API on its
+     * own origin, so ALLOWED_ORIGINS is a comma-separated list of exact origins. Spring's Binder must split it: bound as
+     * one string, neither origin would match and every sign-in would get an empty 403.
+     */
+    @Test void deployedCorsAdmitsEveryListedExactOriginAndNoOther() throws Exception {
+        var env=new StandardEnvironment();
+        var resource=new FileSystemResource("../Deployment/api-gateway.yml");
+        assertTrue(resource.exists(), "Assembled deployment config is required");
+        for(var source:new YamlPropertySourceLoader().load("deployment",resource)){env.getPropertySources().addFirst(source);}
+        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("origins",
+                Map.of("ALLOWED_ORIGINS","https://first.test,https://second.test")));
+        var cors=Binder.get(env).bind("spring.cloud.gateway.globalcors",
+                Bindable.of(org.springframework.cloud.gateway.config.GlobalCorsProperties.class)).orElseThrow(IllegalStateException::new)
+                .getCorsConfigurations().get("/**");
+        assertNotNull(cors);
+        assertEquals(List.of("https://first.test","https://second.test"), cors.getAllowedOrigins());
+        for(String origin:List.of("https://first.test","https://second.test","https://untrusted.test")) {
+            var exchange=org.springframework.mock.web.server.MockServerWebExchange.from(
+                    org.springframework.mock.http.server.reactive.MockServerHttpRequest.options("https://gateway.test/api/v1/auth/otp")
+                        .header("Access-Control-Request-Method","POST").header("Origin",origin));
+            boolean admitted=new org.springframework.web.cors.reactive.DefaultCorsProcessor().process(cors,exchange);
+            assertEquals(!origin.contains("untrusted"), admitted, origin);
+        }
+    }
+
     @Test void partnerRoutesBindToTheCorrectServiceWithRateLimitersAndOnlyOwnPathsAreAuthenticated() throws Exception {
         String file="../Deployment/api-gateway.yml";
         var env=new StandardEnvironment();var resource=new FileSystemResource(file);assertTrue(resource.exists());
