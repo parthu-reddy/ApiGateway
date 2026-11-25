@@ -257,14 +257,14 @@ class MapsGatewayConfigurationTest {
         String id = "11111111-1111-4111-8111-111111111111";
         for (String alias : List.of("", "/maps-service")) {
             String base = alias + "/api/v1/resource-grants/";
-            for (String kind : List.of("area", "saved_route", "metadata")) {
+            for (String kind : List.of("area", "area_metadata", "saved_route", "metadata")) {
                 var policy = com.fooddelivery.apigateway.security.MapsRoutes.classify(base + kind + "/" + id);
                 assertNotNull(policy);
                 assertEquals("edge", policy.backend());
                 assertFalse(policy.publicRoute());
                 assertEquals(java.util.Set.of(org.springframework.http.HttpMethod.POST), policy.methods());
             }
-            for (String path : List.of("area/not-a-uuid", "road/" + id, "area/" + id + "/more")) {
+            for (String path : List.of("area/not-a-uuid", "road/" + id, "area/" + id + "/more", "area_metadata/not-a-uuid", "area-metadata/" + id)) {
                 assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(base + path));
                 assertTrue(com.fooddelivery.apigateway.security.MapsRoutes.reserved(base + path));
             }

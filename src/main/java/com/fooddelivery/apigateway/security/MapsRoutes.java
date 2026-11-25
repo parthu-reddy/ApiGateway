@@ -80,7 +80,7 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/resources/"+UUID+"(?:/(?:history|export))?")) return new Policy("edge", "resource-read", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt")) return new Policy("edge", "resource-tile", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/export-jobs")) return new Policy("edge", "resource-export-job", false, POST);
-        if (p.matches("/api/v1/resource-grants/(?:area|saved_route|metadata)/"+UUID))
+        if (p.matches("/api/v1/resource-grants/(?:area|area_metadata|saved_route|metadata)/"+UUID))
             return new Policy("edge", "resource-grant", false, POST);
         if (p.matches("/api/v1/machine/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "machine-job-execute", false, POST);
         if (p.equals("/api/v1/resource-jobs")) return new Policy("edge", "resource-job", false, READ);
