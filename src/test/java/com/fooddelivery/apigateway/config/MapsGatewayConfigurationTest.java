@@ -161,6 +161,8 @@ class MapsGatewayConfigurationTest {
                     java.util.Map.entry(metadata + "templates/" + id, java.util.Set.of(put)),
                     java.util.Map.entry(metadata + "templates/" + id + "/1", java.util.Set.of(get)),
                     java.util.Map.entry(metadata + "templates/" + id + "/retire", java.util.Set.of(post)),
+                    java.util.Map.entry(metadata + "records/" + id + "/publish", java.util.Set.of(post)),
+                    java.util.Map.entry(metadata + "records/" + id + "/withdraw", java.util.Set.of(post)),
                     java.util.Map.entry(inspect + "areas/" + id + "/1", java.util.Set.of(get))).entrySet()) {
                 var policy = com.fooddelivery.apigateway.security.MapsRoutes.classify(alias + entry.getKey());
                 assertNotNull(policy, entry.getKey());
@@ -168,8 +170,14 @@ class MapsGatewayConfigurationTest {
                 assertFalse(policy.publicRoute());
                 assertEquals(entry.getValue(), policy.methods());
             }
-            for (String path : List.of(metadata + "records/" + id + "/publish", metadata + "public/" + id,
-                    metadata + "records/" + id + "/01", inspect + "areas/" + id + "/01")) {
+            var published = com.fooddelivery.apigateway.security.MapsRoutes.classify(alias + metadata + "public/" + id);
+            assertNotNull(published);
+            assertEquals("edge", published.backend());
+            assertEquals("public-metadata", published.operation());
+            assertTrue(published.publicRoute());
+            assertEquals(java.util.Set.of(get), published.methods());
+            for (String path : List.of(metadata + "records/" + id + "/approve", metadata + "public/not-a-uuid",
+                    metadata + "public/" + id + "/history", metadata + "records/" + id + "/01", inspect + "areas/" + id + "/01")) {
                 assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(alias + path), path);
             }
         }

@@ -41,6 +41,11 @@ public final class MapsRoutes {
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.GET, HttpMethod.POST));
         if (p.matches("/api/v1/metadata/records/"+UUID))
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.GET, HttpMethod.PUT));
+        if (p.matches("/api/v1/metadata/records/"+UUID+"/(?:publish|withdraw)"))
+            return new Policy("edge", "area-metadata", false, POST);
+        // The published record projection is anonymous: the filter strips cookies and CSRF for public routes.
+        if (p.matches("/api/v1/metadata/public/"+UUID))
+            return new Policy("edge", "public-metadata", true, READ);
         if (p.matches("/api/v1/metadata/templates/"+UUID))
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.PUT));
         if (p.matches("/api/v1/metadata/(?:areas/"+UUID+"|records/"+UUID+"/(?:history|"+REVISION+")|templates/"+UUID+"/"+REVISION+")"))
