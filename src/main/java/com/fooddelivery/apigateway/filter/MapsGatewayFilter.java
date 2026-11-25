@@ -32,6 +32,8 @@ import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Exact Maps policy precedes OPTIONS/legacy signed-header/query bearer handling. */
 public final class MapsGatewayFilter implements GlobalFilter, Ordered {
@@ -43,6 +45,12 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
     private final Cache<String,Bucket> signIns = Caffeine.newBuilder().maximumSize(10000).expireAfterAccess(Duration.ofHours(2)).build();
     private final Function<ServerHttpRequest,String> clientAddress;
     private static final long SECOND = 1_000_000_000L, HOUR = 3600*SECOND;
+    /** Route metadata: the route's processing budget in milliseconds, counted from the end of the request body. */
+    public static final String PROCESSING_TIMEOUT = "maps.processing-timeout";
+    static final Duration UPLOAD_IDLE = Duration.ofSeconds(2);
+    /** Bytes per second: a 10 MB area body may take about 78 s, a 64 KiB note about 2.5 s. */
+    static final long UPLOAD_FLOOR = 128 * 1024;
+    private final java.util.concurrent.atomic.AtomicInteger uploads = new java.util.concurrent.atomic.AtomicInteger();
     private static final class Bucket {
         long start; int used; boolean initialized;
         synchronized boolean take(long now, int limit, long window) {
@@ -131,17 +139,45 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
             if(policy.publicRoute()) { headers.remove(HttpHeaders.AUTHORIZATION);headers.remove(HttpHeaders.COOKIE);headers.remove("X-CSRF-Token"); }
             headers.set("X-Request-ID",UUID.randomUUID().toString());
         }).build();
+        // A body is bounded by progress, not by a fixed total (the edge applies the same rule): UPLOAD_IDLE without
+        // bytes, or an average below UPLOAD_FLOOR after it, is 408. An upload holds an upload slot; the route's
+        // processing budget starts when the body ends, so a slow valid upload is not charged to processing.
+        boolean upload=requestHeaders.getContentLength()>0||requestHeaders.containsKey(HttpHeaders.TRANSFER_ENCODING);
+        var uploadSlot=new AtomicBoolean();
+        if(upload) {
+            if(uploads.incrementAndGet()>Math.max(1,properties.getConcurrentUploads()/replicas)){uploads.decrementAndGet();return refuse(exchange,"1");}
+            uploadSlot.set(true);
+        }
+        Runnable endUpload=()->{if(uploadSlot.compareAndSet(true,false))uploads.decrementAndGet();};
+        var bodyEnded=Sinks.<Void>empty();
+        if(!upload)bodyEnded.tryEmitEmpty();
         var count=new AtomicLong();
         var bounded=new ServerHttpRequestDecorator(request){
             @Override public Flux<DataBuffer> getBody(){
+                long started=monotonic.getAsLong();
                 return super.getBody().<DataBuffer>handle((buffer,sink)->{
-                    if(count.addAndGet(buffer.readableByteCount())>maxBody){DataBufferUtils.release(buffer);sink.error(new BodyRefused(true));}
+                    long bytes=count.addAndGet(buffer.readableByteCount());
+                    long elapsed=monotonic.getAsLong()-started;
+                    if(bytes>maxBody){DataBufferUtils.release(buffer);sink.error(new BodyRefused(true));}
+                    else if(elapsed>UPLOAD_IDLE.toNanos()&&bytes<(elapsed-UPLOAD_IDLE.toNanos())/(double)SECOND*UPLOAD_FLOOR)
+                        {DataBufferUtils.release(buffer);sink.error(new BodyRefused(false));}
                     else sink.next(buffer);
-                }).takeUntilOther(Mono.delay(Duration.ofSeconds(2)).then(Mono.error(new BodyRefused(false))))
+                }).timeout(UPLOAD_IDLE,Flux.error(new BodyRefused(false)))
+                  .doFinally(signal->{endUpload.run();bodyEnded.tryEmitEmpty();})
                   .doOnDiscard(DataBuffer.class,DataBufferUtils::release);
             }
         };
         var admitted=exchange.mutate().request(bounded).build();admitted.getAttributes().put(ADMITTED,true);
+        // Route budgets are processing budgets (MapsGatewayConfiguration disables the gateway's own response timeout,
+        // which counts from the start of the upload). The budget runs from the end of the body, or from now for a
+        // bodyless request, until the response is committed. A body never read to its end is bounded by the slowest
+        // valid upload of maxBody.
+        long budget=route.getMetadata().get(PROCESSING_TIMEOUT) instanceof Number n?n.longValue():3000L;
+        var committed=new AtomicBoolean();
+        exchange.getResponse().beforeCommit(()->{committed.set(true);return Mono.empty();});
+        Duration backstop=UPLOAD_IDLE.plusMillis(maxBody*1000/UPLOAD_FLOOR).plusMillis(budget);
+        Mono<Void> expired=Mono.firstWithSignal(bodyEnded.asMono().then(Mono.delay(Duration.ofMillis(budget))),Mono.delay(backstop))
+                .then(Mono.defer(()->committed.get()?Mono.<Void>never():Mono.error(new ProcessingTimeout())));
         if(!policy.publicRoute()) {
             exchange.getResponse().getHeaders().setCacheControl("no-store");
             // Netty appends upstream response headers after this filter runs.
@@ -156,9 +192,14 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
                 return Mono.empty();
             });
         }
-        return chain.filter(admitted).onErrorResume(BodyRefused.class,refused->fail(exchange,
+        return Mono.firstWithSignal(chain.filter(admitted),expired).doFinally(signal->endUpload.run())
+                .onErrorResume(BodyRefused.class,refused->fail(exchange,
                 refused.tooLarge?HttpStatus.PAYLOAD_TOO_LARGE:HttpStatus.REQUEST_TIMEOUT,
-                refused.tooLarge?"PAYLOAD_TOO_LARGE":"UPLOAD_TIMEOUT"));
+                refused.tooLarge?"PAYLOAD_TOO_LARGE":"UPLOAD_TIMEOUT"))
+                .onErrorResume(ProcessingTimeout.class,timeout->fail(exchange,HttpStatus.GATEWAY_TIMEOUT,"UPSTREAM_TIMEOUT"));
+    }
+    private static final class ProcessingTimeout extends RuntimeException {
+        ProcessingTimeout(){super(null,null,false,false);}
     }
     private static final class BodyRefused extends RuntimeException {
         final boolean tooLarge;

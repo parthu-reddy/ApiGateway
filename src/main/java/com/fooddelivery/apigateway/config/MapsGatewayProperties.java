@@ -19,6 +19,9 @@ public class MapsGatewayProperties {
     private int privateClientRequestsPerSecond = 30;
     /** OTP and login per client address. 30/hour is 720/day, under Identity's 1000/day notification budget. */
     private int signInClientRequestsPerHour = 30;
+    /** Concurrent request uploads across all replicas. An upload holds an upstream connection (64 per replica), so the
+     *  per-replica share stays at most half of them and a slow-client flood cannot take the pool from other requests. */
+    private int concurrentUploads = 32;
     /** A container name on the private network: one label, so it cannot be an address or a public hostname. */
     private static final Pattern PRIVATE_SERVICE = Pattern.compile("[a-z][a-z0-9-]*");
     private static boolean origin(String value, boolean plainAllowed) {
@@ -41,7 +44,8 @@ public class MapsGatewayProperties {
                 || privateRequestsPerSecond < maximumReplicas || publicRequestsPerSecond > 10000 || privateRequestsPerSecond > 1000
                 || publicClientRequestsPerSecond < maximumReplicas || publicClientRequestsPerSecond >= publicRequestsPerSecond
                 || privateClientRequestsPerSecond < maximumReplicas || privateClientRequestsPerSecond >= privateRequestsPerSecond
-                || signInClientRequestsPerHour < maximumReplicas || signInClientRequestsPerHour > 10000)
+                || signInClientRequestsPerHour < maximumReplicas || signInClientRequestsPerHour > 10000
+                || concurrentUploads < maximumReplicas || concurrentUploads > 32 * maximumReplicas)
             throw new IllegalStateException("Maps admission configuration is invalid");
     }
 }

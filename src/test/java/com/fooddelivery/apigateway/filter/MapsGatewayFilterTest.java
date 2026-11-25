@@ -164,6 +164,71 @@ class MapsGatewayFilterTest {
         assertEquals(HttpStatus.REQUEST_TIMEOUT,slow.getResponse().getStatusCode());
         assertTrue(Duration.ofNanos(System.nanoTime()-started).compareTo(Duration.ofSeconds(3))<0);
     }
+    MockServerWebExchange exchange(MockServerHttpRequest request, long processingMillis) {
+        var e=exchange(request);
+        Route route=e.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        e.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR,Route.async().id(route.getId()).uri(route.getUri())
+                .predicate(x->true).metadata(route.getMetadata()).metadata(MapsGatewayFilter.PROCESSING_TIMEOUT,processingMillis).build());
+        return e;
+    }
+    static Flux<org.springframework.core.io.buffer.DataBuffer> paced(int chunks, int size, Duration gap) {
+        return Flux.interval(gap).take(chunks).map(i->org.springframework.core.io.buffer.DefaultDataBufferFactory.sharedInstance.wrap(new byte[size]));
+    }
+    static org.springframework.cloud.gateway.filter.GatewayFilterChain consume(Duration processing, AtomicLong received) {
+        return x->DataBufferUtils.join(x.getRequest().getBody()).doOnNext(b->{received.set(b.readableByteCount());DataBufferUtils.release(b);})
+                .then(Mono.delay(processing)).then(Mono.fromRunnable(()->x.getResponse().setStatusCode(HttpStatus.NO_CONTENT)));
+    }
+    /** A body is bounded by progress, not a fixed total, and the route budget starts at the end of the body. Separate
+     *  from the fixed-cutoff test above, which keeps covering a body that never sends a byte. */
+    @Test void aSteadyUploadLongerThanTheOldCutoffReachesTheEdgeAndProcessingStartsAfterIt() {
+        var filter=new MapsGatewayFilter(configured(),PEER);
+        var received=new AtomicLong();
+        // 7 x 160 KiB over ~3.5 s, then 2 s of processing: 5.5 s in all, beyond the old 2 s upload and 3 s response.
+        var steady=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").body(paced(7,160*1024,Duration.ofMillis(500))),3000);
+        filter.filter(steady,consume(Duration.ofSeconds(2),received)).block(Duration.ofSeconds(20));
+        assertEquals(HttpStatus.NO_CONTENT,steady.getResponse().getStatusCode());
+        assertEquals(7*160*1024,received.get());
+    }
+    @Test void anUploadBelowTheFloorIsRefusedAsAnUploadTimeout() {
+        var filter=new MapsGatewayFilter(configured(),PEER);
+        // One byte per 900 ms is never idle for 2 s but stays far below 128 KiB/s.
+        var trickle=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").body(paced(6,1,Duration.ofMillis(900))));
+        long started=System.nanoTime();
+        filter.filter(trickle,consume(Duration.ZERO,new AtomicLong())).block(Duration.ofSeconds(20));
+        assertEquals(HttpStatus.REQUEST_TIMEOUT,trickle.getResponse().getStatusCode());
+        assertTrue(Duration.ofNanos(System.nanoTime()-started).compareTo(Duration.ofSeconds(4))<0,"refused at the first chunk below the floor");
+    }
+    @Test void processingBeyondTheRouteBudgetAfterTheBodyIsAGatewayTimeout() {
+        var filter=new MapsGatewayFilter(configured(),PEER);
+        var slow=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").body(paced(3,1024,Duration.ofMillis(400))),500);
+        filter.filter(slow,consume(Duration.ofSeconds(2),new AtomicLong())).block(Duration.ofSeconds(20));
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT,slow.getResponse().getStatusCode());
+        // The upload itself (1.2 s) is longer than this budget and was not charged to it.
+        var fast=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").body(paced(3,1024,Duration.ofMillis(400))),500);
+        filter.filter(fast,consume(Duration.ofMillis(100),new AtomicLong())).block(Duration.ofSeconds(20));
+        assertEquals(HttpStatus.NO_CONTENT,fast.getResponse().getStatusCode());
+    }
+    @Test void concurrentUploadsAreCappedPerReplicaAndReleasedWhenTheBodyEnds() {
+        var properties=configured();properties.setConcurrentUploads(1);
+        var filter=new MapsGatewayFilter(properties,PEER);
+        var held=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").body(paced(4,1024,Duration.ofMillis(300))));
+        var running=filter.filter(held,consume(Duration.ZERO,new AtomicLong())).subscribe();
+        var second=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").remoteAddress(new InetSocketAddress("192.0.2.9",1)).body(paced(1,1,Duration.ofMillis(10))));
+        filter.filter(second,consume(Duration.ZERO,new AtomicLong())).block(Duration.ofSeconds(5));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS,second.getResponse().getStatusCode());
+        Mono.delay(Duration.ofMillis(1800)).block();
+        assertTrue(running.isDisposed()||held.getResponse().getStatusCode()!=null);
+        var third=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                .header("Origin","https://maps.test").remoteAddress(new InetSocketAddress("192.0.2.10",1)).body(paced(1,1,Duration.ofMillis(10))));
+        filter.filter(third,consume(Duration.ZERO,new AtomicLong())).block(Duration.ofSeconds(5));
+        assertEquals(HttpStatus.NO_CONTENT,third.getResponse().getStatusCode(),"the finished upload released its slot");
+    }
     @Test void routeBodiesShareTheRoutingDecoderBoundaryForDeclaredAndStreamedLengths() {
         for (String operation : List.of("calculate", "directions")) for (String prefix : List.of("", "/maps-service")) {
             String path = prefix + "/api/v1/routes/" + operation;

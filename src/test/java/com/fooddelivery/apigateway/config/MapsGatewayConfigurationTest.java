@@ -31,6 +31,10 @@ class MapsGatewayConfigurationTest {
             var locator=new MapsGatewayConfiguration().mapsRoutes(properties(),new RouteLocatorBuilder(context),client);
             var routes=locator.getRoutes().collectList().block(Duration.ofSeconds(2));assertNotNull(routes);assertEquals(11,routes.size());
             for(Route route:routes){
+                // The gateway's own response timeout counts from the start of the upload, so every Maps route turns it
+                // off and carries a processing budget that MapsGatewayFilter starts at the end of the body.
+                assertEquals(-1L,route.getMetadata().get("response-timeout"),route.getId());
+                assertTrue(route.getMetadata().get(com.fooddelivery.apigateway.filter.MapsGatewayFilter.PROCESSING_TIMEOUT) instanceof Long,route.getId());
                 assertEquals(-100,route.getOrder());assertEquals("v1",route.getMetadata().get("maps.contract"));
                 boolean rewrite=List.of("edge","postal","routing").contains(route.getMetadata().get("maps.backend"));
                 assertEquals(rewrite?1:0,route.getFilters().size(),"programmatic Maps routes must not acquire default Retry/Redis filters");
@@ -39,7 +43,7 @@ class MapsGatewayConfigurationTest {
                 var exchange=MockServerWebExchange.from(MockServerHttpRequest.post(base+"/api/v1/routes/"+entry.getKey()));
                 var selected=routes.stream().filter(route->Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(exchange)).block(Duration.ofSeconds(1)))).toList();
                 assertEquals(1,selected.size(),"Exact bounded analysis route missing or ambiguous");
-                assertEquals(entry.getValue(),selected.getFirst().getMetadata().get("response-timeout"),"Analysis deadline truncated by gateway");
+                assertEquals(entry.getValue(),selected.getFirst().getMetadata().get(com.fooddelivery.apigateway.filter.MapsGatewayFilter.PROCESSING_TIMEOUT),"Analysis deadline truncated by gateway");
                 var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(base+"/api/v1/routes/"+entry.getKey());
                 assertTrue(policy.publicRoute());assertEquals("routing",policy.backend());
                 assertEquals(java.util.Set.of(entry.getKey().equals("analyses/capabilities")?org.springframework.http.HttpMethod.GET:org.springframework.http.HttpMethod.POST),policy.methods());
