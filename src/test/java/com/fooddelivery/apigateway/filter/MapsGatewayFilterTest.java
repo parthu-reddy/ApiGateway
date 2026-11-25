@@ -355,6 +355,27 @@ class MapsGatewayFilterTest {
         assertEquals(HttpStatus.BAD_REQUEST,read.getResponse().getStatusCode());
     }
 
+    // Product decision, 25 November 2026: compressed request bodies are not supported at Maps ingress.
+    @Test void compressedRequestBodiesAreRefusedBeforeAnyByteIsReadOrForwarded() {
+        var buffers = org.springframework.core.io.buffer.DefaultDataBufferFactory.sharedInstance;
+        var routes = List.of(java.util.Map.entry(HttpMethod.POST, "/api/v1/areas"),
+                java.util.Map.entry(HttpMethod.PUT, "/api/v1/metadata/records/11111111-1111-4111-8111-111111111111"),
+                java.util.Map.entry(HttpMethod.POST, "/api/v1/saved-routes/11111111-1111-4111-8111-111111111111/annotations"),
+                java.util.Map.entry(HttpMethod.POST, "/api/v1/spatial/relations"));
+        for (var route : routes) for (String encoding : List.of("gzip", "br", "deflate", "identity")) {
+            var subscribed = new AtomicInteger();
+            var request = exchange(MockServerHttpRequest.method(route.getKey(), route.getValue())
+                    .header(HttpHeaders.CONTENT_ENCODING, encoding).header(HttpHeaders.TRANSFER_ENCODING, "chunked")
+                    .header(HttpHeaders.COOKIE, "maps=opaque").header("X-CSRF-Token", "fixture-proof").header("Idempotency-Key", "fixture-key")
+                    .body(Flux.defer(() -> { subscribed.incrementAndGet(); return Flux.just(buffers.wrap(new byte[16])); })));
+            new MapsGatewayFilter(configured(), PEER).filter(request, x -> { fail("encoded body was forwarded: " + encoding); return Mono.empty(); }).block();
+            String where = route.getValue() + " " + encoding;
+            assertEquals(HttpStatus.UNSUPPORTED_MEDIA_TYPE, request.getResponse().getStatusCode(), where);
+            assertTrue(request.getResponse().getBodyAsString().block().contains("REQUEST_ENCODING_REFUSED"), where);
+            assertEquals(0, subscribed.get(), where);
+        }
+    }
+
     @Test void privateAreaMetadataUsesItsOwnByteBoundary() {
         for (String path : List.of("/api/v1/metadata/records/11111111-1111-4111-8111-111111111111", "/api/v1/road-metadata/records/11111111-1111-4111-8111-111111111111")) {
         var buffers = org.springframework.core.io.buffer.DefaultDataBufferFactory.sharedInstance;
