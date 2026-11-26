@@ -34,6 +34,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 import java.util.concurrent.atomic.AtomicBoolean;
+import static net.logstash.logback.argument.StructuredArguments.kv;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Exact Maps policy precedes OPTIONS/legacy signed-header/query bearer handling. */
 public final class MapsGatewayFilter implements GlobalFilter, Ordered {
@@ -215,7 +218,22 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
                 .onErrorResume(BodyRefused.class,refused->fail(exchange,
                 refused.tooLarge?HttpStatus.PAYLOAD_TOO_LARGE:HttpStatus.REQUEST_TIMEOUT,
                 refused.tooLarge?"PAYLOAD_TOO_LARGE":"UPLOAD_TIMEOUT"))
-                .onErrorResume(ProcessingTimeout.class,timeout->fail(exchange,HttpStatus.GATEWAY_TIMEOUT,"UPSTREAM_TIMEOUT"));
+                .onErrorResume(ProcessingTimeout.class,timeout->fail(exchange,HttpStatus.GATEWAY_TIMEOUT,"UPSTREAM_TIMEOUT"))
+                // A lost upstream (refused on every resolved address, reset, or closed before the response) is a bounded
+                // dependency failure, not a gateway fault. Once the response is committed its status cannot change, so
+                // the error propagates and the connection is aborted rather than completing a truncated body.
+                .onErrorResume(error->!committed.get()&&upstreamLost(error),error->{
+                    LOG.warn("maps upstream unavailable",kv("operation","maps_upstream"),kv("stage","exchange"),kv("route",route.getId()),
+                            kv("maps_operation",operation),kv("cause",error.getClass().getSimpleName()),
+                            kv("elapsed_ms",(monotonic.getAsLong()-now)/1_000_000L));
+                    return fail(exchange,HttpStatus.BAD_GATEWAY,"UPSTREAM_UNAVAILABLE");
+                });
+    }
+    private static final Logger LOG=LoggerFactory.getLogger(MapsGatewayFilter.class);
+    static boolean upstreamLost(Throwable error) {
+        for(Throwable t=error;t!=null;t=t.getCause())
+            if(t instanceof java.io.IOException||t instanceof reactor.netty.channel.AbortedException)return true;
+        return false;
     }
     private static final class ProcessingTimeout extends RuntimeException {
         ProcessingTimeout(){super(null,null,false,false);}

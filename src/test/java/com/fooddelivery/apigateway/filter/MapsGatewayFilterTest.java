@@ -212,6 +212,29 @@ class MapsGatewayFilterTest {
         filter.filter(fast,consume(Duration.ofMillis(100),new AtomicLong())).block(Duration.ofSeconds(20));
         assertEquals(HttpStatus.NO_CONTENT,fast.getResponse().getStatusCode());
     }
+    /** P15-T015: an edge replica lost mid-exchange (SIGKILL) surfaced as Spring's default 500. Every transport loss
+     *  before commit is a bounded, attributed 502; after commit the error propagates (the connection aborts); a
+     *  non-transport fault is not relabelled as an upstream loss. */
+    @Test void aLostUpstreamBeforeCommitIsABoundedBadGatewayAndNothingElseIs() {
+        var filter=new MapsGatewayFilter(configured(),PEER);
+        for(Throwable lost:List.<Throwable>of(new java.io.IOException(new java.net.SocketException("Connection reset")),
+                new java.net.ConnectException("Connection refused"),reactor.netty.channel.AbortedException.beforeSend(),
+                new RuntimeException(new java.io.IOException("wrapped")))) {
+            var e=exchange(MockServerHttpRequest.post("/api/v1/areas").header("Transfer-Encoding","chunked")
+                    .header("Origin","https://maps.test").body(paced(1,16,Duration.ofMillis(10))),3000);
+            filter.filter(e,x->DataBufferUtils.join(x.getRequest().getBody()).doOnNext(DataBufferUtils::release).then(Mono.error(lost)))
+                    .onErrorResume(escaped->Mono.empty()).block(Duration.ofSeconds(5)); // the status assertion decides
+            assertEquals(HttpStatus.BAD_GATEWAY,e.getResponse().getStatusCode(),lost.toString());
+            assertEquals("{\"code\":\"UPSTREAM_UNAVAILABLE\"}",e.getResponse().getBodyAsString().block(),lost.toString());
+        }
+        var committed=exchange(MockServerHttpRequest.get("/api/v1/areas").header("Origin","https://maps.test").build(),3000);
+        var reset=new java.io.IOException("reset after commit");
+        var afterCommit=assertThrows(RuntimeException.class,()->filter.filter(committed,x->x.getResponse().setComplete()
+                .then(Mono.error(reset))).block(Duration.ofSeconds(5)));
+        assertSame(reset,reactor.core.Exceptions.unwrap(afterCommit),"an error after commit propagates unchanged: "+afterCommit);
+        var fault=exchange(MockServerHttpRequest.get("/api/v1/areas").header("Origin","https://maps.test").build(),3000);
+        assertThrows(IllegalStateException.class,()->filter.filter(fault,x->Mono.error(new IllegalStateException("bug"))).block(Duration.ofSeconds(5)));
+    }
     @Test void concurrentUploadsAreCappedPerReplicaAndReleasedWhenTheBodyEnds() {
         var properties=configured();properties.setConcurrentUploads(1);
         var filter=new MapsGatewayFilter(properties,PEER);
