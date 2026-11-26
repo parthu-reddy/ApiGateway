@@ -139,7 +139,8 @@ class MapsStandaloneProfileTest {
         registry.add("MAPS_PUBLIC_ORIGIN", () -> ORIGIN);
         registry.add("MAPS_GATEWAY_TRUSTED_PROXIES", () -> "192.168.0.0/16");
         registry.add("MAPS_EDGE_URI", () -> "https://localhost:" + edge.getAddress().getPort());
-        for (String backend : java.util.List.of("MAPS_PUBLIC_URI", "MAPS_ASSETS_URI", "MAPS_POSTAL_URI", "MAPS_ROUTING_URI")) registry.add(backend, () -> local);
+        for (String backend : java.util.List.of("MAPS_PUBLIC_URI", "MAPS_ASSETS_URI", "MAPS_POSTAL_URI")) registry.add(backend, () -> local);
+        registry.add("MAPS_GATEWAY_CLIENT_KEY_SECRET", () -> "ef".repeat(32));
         registry.add("MAPS_GATEWAY_TLS_KEY_STORE", store.toURI()::toString);
         registry.add("MAPS_GATEWAY_TLS_KEY_STORE_PASSWORD", () -> PASSWORD);
         registry.add("MAPS_GATEWAY_TLS_TRUST_CERTIFICATES", certificate.toURI()::toString);

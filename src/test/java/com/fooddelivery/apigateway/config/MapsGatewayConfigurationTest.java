@@ -19,7 +19,7 @@ class MapsGatewayConfigurationTest {
     MapsGatewayProperties properties(){
         var properties=new MapsGatewayProperties();properties.setEnabled(true);properties.setPublicOrigin("https://maps.test");
         properties.setEdgeUri("https://edge.test");properties.setPublicUri("https://public.test");
-        properties.setAssetsUri("https://assets.test");properties.setPostalUri("https://postal.test");properties.setRoutingUri("https://routing.test");
+        properties.setAssetsUri("https://assets.test");properties.setPostalUri("https://postal.test");properties.setClientKeySecret("ab".repeat(32));
         return properties;
     }
     @Test void sourceRoutesPrecedeLegacySubpathAndDoNotInheritSharedRetryFilters(){
@@ -29,26 +29,37 @@ class MapsGatewayConfigurationTest {
             context.registerBean(GatewayProperties.class,()->defaults);context.refresh();
             var client=new HttpClientProperties();client.getSsl().setKeyStore("file:/owned-fixture-only.p12");client.getSsl().setTrustedX509Certificates(List.of("file:/owned-fixture-only-ca.pem"));
             var locator=new MapsGatewayConfiguration().mapsRoutes(properties(),new RouteLocatorBuilder(context),client);
-            var routes=locator.getRoutes().collectList().block(Duration.ofSeconds(2));assertNotNull(routes);assertEquals(11,routes.size());
+            var routes=locator.getRoutes().collectList().block(Duration.ofSeconds(2));assertNotNull(routes);assertEquals(10,routes.size());
             for(Route route:routes){
                 // The gateway's own response timeout counts from the start of the upload, so every Maps route turns it
                 // off and carries a processing budget that MapsGatewayFilter starts at the end of the body.
                 assertEquals(-1L,route.getMetadata().get("response-timeout"),route.getId());
                 assertTrue(route.getMetadata().get(com.fooddelivery.apigateway.filter.MapsGatewayFilter.PROCESSING_TIMEOUT) instanceof Long,route.getId());
                 assertEquals(-100,route.getOrder());assertEquals("v1",route.getMetadata().get("maps.contract"));
-                boolean rewrite=List.of("edge","postal","routing").contains(route.getMetadata().get("maps.backend"));
+                boolean rewrite=List.of("edge","postal").contains(route.getMetadata().get("maps.backend"));
                 assertEquals(rewrite?1:0,route.getFilters().size(),"programmatic Maps routes must not acquire default Retry/Redis filters");
             }
-            for (String base:List.of("","/maps-service")) for (var entry:java.util.Map.of("matrix",22000L,"optimise",22000L,"isochrones",12000L,"match",10000L,"elevation",3000L,"analyses/capabilities",5000L).entrySet()) {
-                var exchange=MockServerWebExchange.from(MockServerHttpRequest.post(base+"/api/v1/routes/"+entry.getKey()));
+            for (String base:List.of("","/maps-service")) for (String family:List.of("/api/v1/routes/","/api/v1/editor-routes/"))
+                for (var entry:java.util.Map.of("matrix",22000L,"optimise",22000L,"isochrones",12000L,"match",10000L,"elevation",3000L,"analyses/capabilities",5000L).entrySet()) {
+                boolean editor=family.contains("editor");
+                if(editor&&entry.getKey().equals("analyses/capabilities")){assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(base+family+entry.getKey()));continue;}
+                var exchange=MockServerWebExchange.from(MockServerHttpRequest.post(base+family+entry.getKey()));
                 var selected=routes.stream().filter(route->Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(exchange)).block(Duration.ofSeconds(1)))).toList();
                 assertEquals(1,selected.size(),"Exact bounded analysis route missing or ambiguous");
                 assertEquals(entry.getValue(),selected.getFirst().getMetadata().get(com.fooddelivery.apigateway.filter.MapsGatewayFilter.PROCESSING_TIMEOUT),"Analysis deadline truncated by gateway");
-                var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(base+"/api/v1/routes/"+entry.getKey());
-                assertTrue(policy.publicRoute());assertEquals("routing",policy.backend());
+                // Every route operation is admitted by the edge's shared budget; it reaches routing only through the edge.
+                assertEquals("edge",selected.getFirst().getMetadata().get("maps.backend"));assertEquals("edge.test",selected.getFirst().getUri().getHost());
+                var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(base+family+entry.getKey());
+                assertEquals(!editor,policy.publicRoute());assertEquals("edge",policy.backend());
                 assertEquals(java.util.Set.of(entry.getKey().equals("analyses/capabilities")?org.springframework.http.HttpMethod.GET:org.springframework.http.HttpMethod.POST),policy.methods());
-                assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(base+"/api/v1/routes/"+entry.getKey()+"/extra"));
+                assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify(base+family+entry.getKey()+"/extra"));
             }
+            for(String base:List.of("","/maps-service")) for(String path:List.of("/api/v1/routes/calculate","/api/v1/routes/directions","/api/v1/routes/capabilities","/api/v1/editor-routes/calculate","/api/v1/editor-routes/directions")){
+                var exchange=MockServerWebExchange.from(MockServerHttpRequest.post(base+path));
+                var selected=routes.stream().filter(route->Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(exchange)).block(Duration.ofSeconds(1)))).toList();
+                assertEquals(1,selected.size(),path);assertEquals("maps-v1-edge",selected.getFirst().getId(),path);
+            }
+            assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify("/api/v1/editor-routes/capabilities"));
             for(String base:List.of("","/maps-service")){
                 var exchange=MockServerWebExchange.from(MockServerHttpRequest.get(base+"/api/v1/maps-session/session"));
                 var selected=routes.stream().filter(route->Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(exchange)).block(Duration.ofSeconds(1)))).toList();
@@ -59,7 +70,7 @@ class MapsGatewayConfigurationTest {
     }
     @Test void plainHttpIsOnlyForPublicRouteBackendsOnThePrivateNetwork(){
         for(java.util.function.BiConsumer<MapsGatewayProperties,String> backend:List.<java.util.function.BiConsumer<MapsGatewayProperties,String>>of(
-                MapsGatewayProperties::setPublicUri,MapsGatewayProperties::setAssetsUri,MapsGatewayProperties::setPostalUri,MapsGatewayProperties::setRoutingUri)){
+                MapsGatewayProperties::setPublicUri,MapsGatewayProperties::setAssetsUri,MapsGatewayProperties::setPostalUri)){
             var allowed=properties();backend.accept(allowed,"http://private-service:8781");allowed.validate();
             for(String refused:List.of("http://10.0.0.5:8781","http://maps.example.com","http://[::1]:8781","http://2130706433","ftp://service","http://service/path","http://user@service")){
                 var candidate=properties();backend.accept(candidate,refused);
@@ -73,10 +84,15 @@ class MapsGatewayConfigurationTest {
         String hash="a".repeat(64);
         for(String path:List.of("/public/"+hash+"/basemap.json","/assets/"+hash+"/release.json","/maps-service/assets/"+hash+"/release.json",
                 "/assets/"+hash+"/styles/streets.json","/assets/"+hash+"/glyphs/0-255.pbf",
-                "/api/v1/countries/IN/postal-codes/560001","/api/v1/postal-codes/at-point","/api/v1/routes/calculate","/api/v1/routes/capabilities","/api/v1/routes/directions")){
+                "/api/v1/countries/IN/postal-codes/560001","/api/v1/postal-codes/at-point")){
             var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(path);
             assertNotNull(policy,path);assertTrue(policy.publicRoute(),path);
-            assertTrue(List.of("public","assets","postal","routing").contains(policy.backend()),path);
+            assertTrue(List.of("public","assets","postal").contains(policy.backend()),path);
+        }
+        // Public route operations are still credential-free, but they travel on the edge's mutual-TLS hop.
+        for(String path:List.of("/api/v1/routes/calculate","/api/v1/routes/capabilities","/api/v1/routes/directions","/api/v1/routes/matrix")){
+            var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(path);
+            assertEquals("edge",policy.backend(),path);assertTrue(policy.publicRoute(),path);
         }
         for(String path:List.of("/api/v1/maps-session/session","/api/v1/maps-session/login","/api/v1/resources")){
             var policy=com.fooddelivery.apigateway.security.MapsRoutes.classify(path);
@@ -98,12 +114,19 @@ class MapsGatewayConfigurationTest {
                     "directions", org.springframework.http.HttpMethod.POST).entrySet()) {
                 var policy = com.fooddelivery.apigateway.security.MapsRoutes.classify(base + "/api/v1/routes/" + entry.getKey());
                 assertNotNull(policy);
-                assertEquals("routing", policy.backend());
+                assertEquals("edge", policy.backend());
                 assertTrue(policy.publicRoute());
                 assertEquals(java.util.Set.of(entry.getValue()), policy.methods());
             }
         }
         assertNull(com.fooddelivery.apigateway.security.MapsRoutes.classify("/api/v1/routes/directions/private"));
+    }
+    @Test void theClientKeySecretIsRequiredHexOfThirtyTwoToSixtyFourBytes(){
+        for(String refused:java.util.Arrays.asList(null,"","${MAPS_GATEWAY_CLIENT_KEY_SECRET}","ab".repeat(31),"ab".repeat(65),"AB".repeat(32),"ab".repeat(32)+"a")){
+            var candidate=properties();candidate.setClientKeySecret(refused);
+            assertThrows(IllegalStateException.class,candidate::validate,String.valueOf(refused));
+        }
+        for(int bytes:new int[]{32,64}){var accepted=properties();accepted.setClientKeySecret("cd".repeat(bytes));accepted.validate();}
     }
     @Test void thePublicOriginIsRequiredAndMustBeOneHttpsOrigin(){
         for(String refused:java.util.Arrays.asList(null,"${MAPS_PUBLIC_ORIGIN}","http://maps.test","https://maps.test/","https://maps.test/maps","*")){

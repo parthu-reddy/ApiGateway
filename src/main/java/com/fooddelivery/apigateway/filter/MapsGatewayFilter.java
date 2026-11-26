@@ -66,6 +66,20 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
         if(raw==null||raw.length!=16||Arrays.equals(Arrays.copyOf(raw,8),new byte[8]))return address;
         return HexFormat.of().formatHex(raw,0,8);
     }
+    /** The edge's heavy-operation budget key: a keyed pseudonym of clientKey, so no address reaches the edge. */
+    public static final String CLIENT_HEADER = "X-Maps-Client";
+    private javax.crypto.spec.SecretKeySpec pseudonymKey;
+    private String pseudonym(String client) {
+        try {
+            if (pseudonymKey == null) {
+                if (!properties.clientKeySecretValid()) return null;
+                pseudonymKey = new javax.crypto.spec.SecretKeySpec(HexFormat.of().parseHex(properties.getClientKeySecret()), "HmacSHA256");
+            }
+            var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(pseudonymKey);
+            return HexFormat.of().formatHex(mac.doFinal(client.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException unavailable) { return null; }
+    }
     public static boolean admitted(ServerWebExchange exchange) { return Boolean.TRUE.equals(exchange.getAttribute(ADMITTED)); }
     private static Mono<Void> refuse(ServerWebExchange exchange, String retryAfter) {
         exchange.getResponse().getHeaders().set("Retry-After",retryAfter);return fail(exchange,HttpStatus.TOO_MANY_REQUESTS,"ADMISSION_EXCEEDED");
@@ -109,12 +123,14 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
         };
         boolean metadataWrite = (operation.equals("area-metadata") || operation.equals("routing-metadata") || operation.equals("routing-mutation"))
                 && (HttpMethod.POST.equals(method) || HttpMethod.PUT.equals(method));
-        // Match the owning handlers' decoded envelope limits for area, metadata and annotation writes.
+        // Match the owning handlers' decoded envelope limits for area, metadata and annotation writes. An editor
+        // route operation has the same envelope as its public counterpart.
+        String envelope = operation.startsWith("editor-") ? operation.substring("editor-".length()) : operation;
         long maxBody = machine ? 0 : areaWrite ? 10_000_000
                 : metadataWrite ? 65_536
-                : operation.equals("spatial-relations") || operation.startsWith("analysis-") ? 1_048_576
-                : operation.equals("routing-annotation") ? 400_000
-                : operation.equals("route-calculate") || operation.equals("route-directions") ? 4096 : 8192;
+                : envelope.equals("spatial-relations") || envelope.startsWith("analysis-") ? 1_048_576
+                : envelope.equals("routing-annotation") ? 400_000
+                : envelope.equals("route-calculate") || envelope.equals("route-directions") ? 4096 : 8192;
         if(exchange.getRequest().getHeaders().getContentLength()>maxBody)return fail(exchange,HttpStatus.PAYLOAD_TOO_LARGE,"PAYLOAD_TOO_LARGE");
         if(exchange.getRequest().getHeaders().containsKey(HttpHeaders.CONTENT_ENCODING))return fail(exchange,HttpStatus.UNSUPPORTED_MEDIA_TYPE,"REQUEST_ENCODING_REFUSED");
         if(!HttpMethod.POST.equals(method)&&!areaWrite&&!metadataWrite
@@ -132,10 +148,13 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
         if((policy.operation().equals("session-otp")||policy.operation().equals("session-login"))
                 &&!signIns.get(client,k->new Bucket()).take(now,properties.getSignInClientRequestsPerHour()/replicas,HOUR))return refuse(exchange,"3600");
         if(!totals.computeIfAbsent(population,k->new Bucket()).take(now,total,SECOND))return refuse(exchange,"1");
+        String pseudonym=policy.backend().equals("edge")?pseudonym(client):null;
+        if(policy.backend().equals("edge")&&pseudonym==null)return fail(exchange,HttpStatus.SERVICE_UNAVAILABLE,"MAPS_ADMISSION_UNAVAILABLE");
         var request=exchange.getRequest().mutate().headers(headers->{
             for(String header:List.of("X-User-Id","X-User-Roles","X-User-Phone","X-Session-Id","X-Identity-Signature","X-Issued-At","X-Client-Fingerprint",
                     "Forwarded","X-Forwarded-For","X-Forwarded-Host","X-Forwarded-Proto","X-Forwarded-Port","X-Forwarded-Prefix","X-Forwarded-Client-Cert",
-                    "X-Request-ID","X-B3-TraceId","X-B3-SpanId","traceparent","tracestate","Proxy-Authorization","X-E2E-Runner-Secret")) headers.remove(header);
+                    "X-Request-ID","X-B3-TraceId","X-B3-SpanId","traceparent","tracestate","Proxy-Authorization","X-E2E-Runner-Secret",CLIENT_HEADER)) headers.remove(header);
+            if(pseudonym!=null)headers.set(CLIENT_HEADER,pseudonym);
             if(policy.publicRoute()) { headers.remove(HttpHeaders.AUTHORIZATION);headers.remove(HttpHeaders.COOKIE);headers.remove("X-CSRF-Token"); }
             headers.set("X-Request-ID",UUID.randomUUID().toString());
         }).build();

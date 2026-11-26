@@ -23,7 +23,8 @@ gateway:
     public-uri: ${MAPS_PUBLIC_URI}
     assets-uri: ${MAPS_ASSETS_URI}
     postal-uri: ${MAPS_POSTAL_URI}
-    routing-uri: ${MAPS_ROUTING_URI}
+    # Shared by every gateway replica: the edge keys its cross-replica heavy-operation budgets on the pseudonym.
+    client-key-secret: ${MAPS_GATEWAY_CLIENT_KEY_SECRET}
     maximum-replicas: ${MAPS_GATEWAY_MAXIMUM_REPLICAS:1}
     public-requests-per-second: ${MAPS_GATEWAY_PUBLIC_RPS:1000}
     private-requests-per-second: ${MAPS_GATEWAY_PRIVATE_RPS:100}

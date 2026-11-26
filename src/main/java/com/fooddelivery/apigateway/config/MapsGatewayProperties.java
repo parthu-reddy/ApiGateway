@@ -10,7 +10,12 @@ public class MapsGatewayProperties {
     private boolean enabled;
     /** The browser's origin. Exactly one, and it must match the Maps edge's public_origin. */
     private String publicOrigin;
-    private String edgeUri, publicUri, assetsUri, postalUri, routingUri;
+    private String edgeUri, publicUri, assetsUri, postalUri;
+    /** HMAC-SHA256 key (hex, 32 to 64 bytes) for the client pseudonym sent to the edge as X-Maps-Client. The edge keys
+     *  its shared heavy-operation budgets on it, so every gateway replica must use the same key. */
+    private String clientKeySecret;
+    private static final Pattern CLIENT_KEY_SECRET = Pattern.compile("(?:[0-9a-f]{2}){32,64}");
+    public boolean clientKeySecretValid() { return clientKeySecret != null && CLIENT_KEY_SECRET.matcher(clientKeySecret).matches(); }
     private int maximumReplicas = 1;
     private int publicRequestsPerSecond = 1000;
     private int privateRequestsPerSecond = 100;
@@ -38,8 +43,9 @@ public class MapsGatewayProperties {
         // The edge route carries the session cookie and CSRF token, so it stays on mutual TLS. The others are public
         // routes whose credentials MapsGatewayFilter strips, so plain http on the private network carries none.
         boolean valid = origin(edgeUri, false);
-        for (String value : java.util.Arrays.asList(publicUri, assetsUri, postalUri, routingUri)) valid &= origin(value, true);
+        for (String value : java.util.Arrays.asList(publicUri, assetsUri, postalUri)) valid &= origin(value, true);
         if (!valid) throw new IllegalStateException("Maps upstream configuration is invalid");
+        if (!clientKeySecretValid()) throw new IllegalStateException("Maps client key secret is invalid");
         if (maximumReplicas < 1 || maximumReplicas > 16 || publicRequestsPerSecond < maximumReplicas
                 || privateRequestsPerSecond < maximumReplicas || publicRequestsPerSecond > 10000 || privateRequestsPerSecond > 1000
                 || publicClientRequestsPerSecond < maximumReplicas || publicClientRequestsPerSecond >= publicRequestsPerSecond

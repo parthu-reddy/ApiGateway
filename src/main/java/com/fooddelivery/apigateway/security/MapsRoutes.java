@@ -100,12 +100,19 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/countries/IN/postal-codes/[0-9]{6}(?:/(?:geometry|neighbors))?")
                 || p.equals("/api/v1/countries/IN/postal-codes/at-point") || p.equals("/api/v1/postal-codes/at-point"))
             return new Policy("postal", "postal-read", true, READ);
-        if (p.equals("/api/v1/routes/analyses/capabilities")) return new Policy("routing", "analysis-capabilities", true, READ);
+        // Route operations go to the edge, which applies the shared heavy-operation budget across its replicas
+        // and forwards to routing. The public family is anonymous (credentials stripped); the editor family
+        // carries the session and is admitted on the verified actor's scoped budget.
+        if (p.equals("/api/v1/routes/analyses/capabilities")) return new Policy("edge", "analysis-capabilities", true, READ);
         if (p.matches("/api/v1/routes/(?:matrix|isochrones|match|optimise|elevation)"))
-            return new Policy("routing", "analysis-" + p.substring(p.lastIndexOf('/')+1), true, POST);
-        if (p.equals("/api/v1/routes/capabilities")) return new Policy("routing", "route-capabilities", true, READ);
-        if (p.equals("/api/v1/routes/directions")) return new Policy("routing", "route-directions", true, POST);
-        if (p.equals("/api/v1/routes/calculate")) return new Policy("routing", "route-calculate", true, POST);
+            return new Policy("edge", "analysis-" + p.substring(p.lastIndexOf('/')+1), true, POST);
+        if (p.equals("/api/v1/routes/capabilities")) return new Policy("edge", "route-capabilities", true, READ);
+        if (p.equals("/api/v1/routes/directions")) return new Policy("edge", "route-directions", true, POST);
+        if (p.equals("/api/v1/routes/calculate")) return new Policy("edge", "route-calculate", true, POST);
+        if (p.matches("/api/v1/editor-routes/(?:matrix|isochrones|match|optimise|elevation)"))
+            return new Policy("edge", "editor-analysis-" + p.substring(p.lastIndexOf('/')+1), false, POST);
+        if (p.matches("/api/v1/editor-routes/(?:calculate|directions)"))
+            return new Policy("edge", "editor-route-" + p.substring(p.lastIndexOf('/')+1), false, POST);
         return null;
     }
 }

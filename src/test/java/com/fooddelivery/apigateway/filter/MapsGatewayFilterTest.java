@@ -27,7 +27,7 @@ class MapsGatewayFilterTest {
     static final java.util.function.Function<org.springframework.http.server.reactive.ServerHttpRequest,String> PEER=
             r->r.getRemoteAddress()==null?"unknown":r.getRemoteAddress().getAddress().getHostAddress();
     MapsGatewayProperties configured() {
-        var p=new MapsGatewayProperties();p.setEnabled(true);return p;
+        var p=new MapsGatewayProperties();p.setEnabled(true);p.setClientKeySecret("ab".repeat(32));return p;
     }
     MockServerWebExchange exchange(MockServerHttpRequest request) {
         var e=MockServerWebExchange.from(request);
@@ -261,6 +261,75 @@ class MapsGatewayFilterTest {
             }
         }
     }
+    static String hmac(String secretHex,String client) throws Exception {
+        var mac=javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(java.util.HexFormat.of().parseHex(secretHex),"HmacSHA256"));
+        return java.util.HexFormat.of().formatHex(mac.doFinal(client.getBytes(StandardCharsets.UTF_8)));
+    }
+    MockServerWebExchange from(MockServerHttpRequest.BaseBuilder<?> builder,String address){
+        return exchange(builder.remoteAddress(new InetSocketAddress(address,443)).header(MapsGatewayFilter.CLIENT_HEADER,"f".repeat(64)).build());
+    }
+    @Test void edgeRequestsCarryOnlyTheKeyedClientPseudonymAndOtherBackendsNone() throws Exception {
+        var seen=new java.util.ArrayList<String>();
+        // Two filter instances stand for two gateway replicas sharing the configured key.
+        for(var filter:List.of(new MapsGatewayFilter(configured(),PEER),new MapsGatewayFilter(configured(),PEER))){
+            for(var request:List.<MockServerHttpRequest.BaseBuilder<?>>of(MockServerHttpRequest.post("/api/v1/routes/calculate"),
+                    MockServerHttpRequest.post("/maps-service/api/v1/routes/matrix"),MockServerHttpRequest.get("/api/v1/maps-session/session"),
+                    MockServerHttpRequest.post("/api/v1/editor-routes/optimise").header(HttpHeaders.COOKIE,"maps=opaque"))){
+                var e=from(request,"198.51.100.7");
+                filter.filter(e,x->{seen.add(x.getRequest().getHeaders().getFirst(MapsGatewayFilter.CLIENT_HEADER));
+                    assertEquals(1,x.getRequest().getHeaders().getOrEmpty(MapsGatewayFilter.CLIENT_HEADER).size());return Mono.empty();}).block();
+                assertNull(e.getResponse().getStatusCode());
+            }
+        }
+        assertEquals(8,seen.size());
+        // The value is HMAC-SHA256 of the client bucket key, identical across replicas and never the address itself.
+        assertEquals(java.util.Set.of(hmac("ab".repeat(32),"198.51.100.7")),new java.util.HashSet<>(seen));
+        var other=new java.util.ArrayList<String>();
+        new MapsGatewayFilter(configured(),PEER).filter(from(MockServerHttpRequest.post("/api/v1/routes/calculate"),"198.51.100.8"),
+                x->{other.add(x.getRequest().getHeaders().getFirst(MapsGatewayFilter.CLIENT_HEADER));return Mono.empty();}).block();
+        assertEquals(List.of(hmac("ab".repeat(32),"198.51.100.8")),other);
+        // An IPv6 customer's /64 is one client, so rotation inside it cannot mint fresh edge budgets.
+        var v6=new java.util.HashSet<String>();
+        for(String address:List.of("2001:db8:1:2::1","2001:db8:1:2:ffff::9")) new MapsGatewayFilter(configured(),PEER).filter(
+                from(MockServerHttpRequest.post("/api/v1/routes/calculate"),address),x->{v6.add(x.getRequest().getHeaders().getFirst(MapsGatewayFilter.CLIENT_HEADER));return Mono.empty();}).block();
+        assertEquals(java.util.Set.of(hmac("ab".repeat(32),"20010db800010002")),v6);
+        // Postal, public and asset backends never receive the header, even one a client supplied.
+        String hash="a".repeat(64);
+        for(String path:List.of("/api/v1/search","/public/"+hash+"/basemap.json","/assets/"+hash+"/release.json")){
+            var e=from(MockServerHttpRequest.get(path),"198.51.100.7");
+            new MapsGatewayFilter(configured(),PEER).filter(e,x->{assertNull(x.getRequest().getHeaders().getFirst(MapsGatewayFilter.CLIENT_HEADER),path);return Mono.empty();}).block();
+            assertNull(e.getResponse().getStatusCode(),path);
+        }
+    }
+    @Test void anEdgeRequestWithoutAUsableClientKeyIsRefusedBeforeForwarding() {
+        for(String secret:java.util.Arrays.asList(null,"short")){
+            var p=configured();p.setClientKeySecret(secret);
+            var e=from(MockServerHttpRequest.post("/api/v1/routes/calculate"),"198.51.100.7");
+            new MapsGatewayFilter(p,PEER).filter(e,x->{fail("forwarded without a client pseudonym");return Mono.empty();}).block();
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE,e.getResponse().getStatusCode());
+            assertEquals("{\"code\":\"MAPS_ADMISSION_UNAVAILABLE\"}",e.getResponse().getBodyAsString().block());
+        }
+    }
+    @Test void editorRouteOperationsKeepTheSessionAndTheirPublicEnvelope() {
+        for(String prefix:List.of("","/maps-service")) for(var entry:java.util.Map.of("calculate",4096,"directions",4096,"matrix",1048576,"match",1048576,"isochrones",1048576,"optimise",1048576,"elevation",1048576).entrySet()) {
+            for(boolean declared:new boolean[]{true,false}) for(int size:new int[]{entry.getValue(),entry.getValue()+1}) {
+                var builder=MockServerHttpRequest.post(prefix+"/api/v1/editor-routes/"+entry.getKey()).header(HttpHeaders.COOKIE,"maps=opaque").header("X-CSRF-Token","proof");
+                if(declared)builder.header(HttpHeaders.CONTENT_LENGTH,Integer.toString(size));else builder.header(HttpHeaders.TRANSFER_ENCODING,"chunked");
+                var e=exchange(builder.body(Flux.just(org.springframework.core.io.buffer.DefaultDataBufferFactory.sharedInstance.wrap(new byte[size]))));
+                var count=new AtomicInteger();
+                new MapsGatewayFilter(configured(),PEER).filter(e,clean->{
+                    assertEquals("maps=opaque",clean.getRequest().getHeaders().getFirst(HttpHeaders.COOKIE));assertEquals("proof",clean.getRequest().getHeaders().getFirst("X-CSRF-Token"));
+                    return DataBufferUtils.join(clean.getRequest().getBody()).doOnNext(buffer->{count.set(buffer.readableByteCount());DataBufferUtils.release(buffer);}).then();
+                }).block();
+                if(size==entry.getValue()){assertNull(e.getResponse().getStatusCode(),entry.getKey());assertEquals(size,count.get());}
+                else {assertEquals(HttpStatus.PAYLOAD_TOO_LARGE,e.getResponse().getStatusCode(),entry.getKey());assertEquals(0,count.get());}
+            }
+            var bearer=exchange(MockServerHttpRequest.post(prefix+"/api/v1/editor-routes/"+entry.getKey()).header(HttpHeaders.AUTHORIZATION,"Bearer "+"a".repeat(64)).build());
+            new MapsGatewayFilter(configured(),PEER).filter(bearer,x->{fail("editor route accepted a bearer credential");return Mono.empty();}).block();
+            assertEquals(HttpStatus.BAD_REQUEST,bearer.getResponse().getStatusCode());
+        }
+    }
     @Test void declaredEncodedFontStackRemainsUsableWithoutOpeningEncodedPathAliases(){
         var filter=new MapsGatewayFilter(configured(),PEER);
         var e=exchange(MockServerHttpRequest.method(org.springframework.http.HttpMethod.GET,java.net.URI.create("https://maps.test/assets/"+"a".repeat(64)+"/glyphs/Noto%20Sans%20Regular%2CNoto%20Sans%20Devanagari%20Regular%2CNoto%20Sans%20Kannada%20Regular/0-255.pbf")).build());
@@ -312,7 +381,7 @@ class MapsGatewayFilterTest {
         assertNull(call(filter,MockServerHttpRequest.post("/api/v1/maps-session/otp"),"198.51.100.7"));
     }
     @Test void clientShareMustBeBelowItsPopulationOrItCanNeverBite() {
-        var p=configured();p.setPublicOrigin("https://maps.test");p.setEdgeUri("https://e.test");p.setPublicUri("https://p.test");p.setAssetsUri("https://a.test");p.setPostalUri("https://c.test");p.setRoutingUri("https://r.test");
+        var p=configured();p.setPublicOrigin("https://maps.test");p.setEdgeUri("https://e.test");p.setPublicUri("https://p.test");p.setAssetsUri("https://a.test");p.setPostalUri("https://c.test");
         p.validate();
         p.setPrivateClientRequestsPerSecond(100);assertThrows(IllegalStateException.class,p::validate);p.setPrivateClientRequestsPerSecond(30);
         p.setPublicClientRequestsPerSecond(1000);assertThrows(IllegalStateException.class,p::validate);p.setPublicClientRequestsPerSecond(100);
