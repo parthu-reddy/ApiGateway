@@ -25,29 +25,33 @@ public class MapsGatewayConfiguration {
         if(ssl.isUseInsecureTrustManager()||ssl.getKeyStore()==null||ssl.getKeyStore().isBlank()||ssl.getTrustedX509Certificates().isEmpty())
             throw new IllegalStateException("Maps upstream requires scoped TLS client keys and explicit trust roots");
         var routes=builder.routes();
-        var backends=Map.of("edge",properties.getEdgeUri(),"public",properties.getPublicUri(),"assets",properties.getAssetsUri(),"postal",properties.getPostalUri(),"routing",properties.getRoutingUri());
-        // Each bounded analysis keeps its domain deadline. These routes use the
-        // same private routing service, without retries or global timeout changes.
+        var backends=Map.of("edge",properties.getEdgeUri(),"public",properties.getPublicUri(),"assets",properties.getAssetsUri(),"postal",properties.getPostalUri());
+        // Each bounded analysis keeps its domain deadline, public and editor alike. The edge admits it on the shared
+        // heavy-operation budget and forwards it to routing, without retries or global timeout changes.
+        // response-timeout -1 turns off the gateway's own timeout, which counts from the start of the upload;
+        // MapsGatewayFilter applies PROCESSING_TIMEOUT from the end of the request body instead.
         for(var operation:Map.of("matrix",22000L,"optimise",22000L,"isochrones",12000L,"match",10000L,"elevation",3000L,"capabilities",5000L).entrySet()) {
             routes.route("maps-v1-analysis-"+operation.getKey(),predicate->predicate.order(-100).predicate(exchange->{
                 var policy=MapsRoutes.classify(exchange.getRequest().getURI().getPath());
-                return policy!=null&&policy.operation().equals("analysis-"+operation.getKey());
+                return policy!=null&&(policy.operation().equals("analysis-"+operation.getKey())||policy.operation().equals("editor-analysis-"+operation.getKey()));
             }).filters(filters->filters.rewritePath("/maps-service/(?<segment>.*)","/${segment}"))
-              .metadata("maps.contract","v1").metadata("maps.backend","routing")
-              .metadata("connect-timeout",300).metadata("response-timeout",operation.getValue()).uri(properties.getRoutingUri()));
+              .metadata("maps.contract","v1").metadata("maps.backend","edge")
+              .metadata("connect-timeout",300).metadata("response-timeout",-1L)
+              .metadata(MapsGatewayFilter.PROCESSING_TIMEOUT,operation.getValue()).uri(properties.getEdgeUri()));
         }
         for(var backend:backends.entrySet()) {
             routes.route("maps-v1-"+backend.getKey(), predicate->predicate.order(-100).predicate(exchange->{
                 var policy=MapsRoutes.classify(exchange.getRequest().getURI().getPath());
-                return policy!=null&&policy.backend().equals(backend.getKey())&&!policy.operation().startsWith("analysis-");
+                return policy!=null&&policy.backend().equals(backend.getKey())&&!policy.operation().startsWith("analysis-")&&!policy.operation().startsWith("editor-analysis-");
             }).filters(filters->{
                 // Only edge API paths are rewritten; immutable public style/tile URLs retain
                 // their configured hosting base, release identity and range/conditional bytes.
-                if(backend.getKey().equals("edge")||backend.getKey().equals("postal")||backend.getKey().equals("routing"))
+                if(backend.getKey().equals("edge")||backend.getKey().equals("postal"))
                     filters.rewritePath("/maps-service/(?<segment>.*)","/${segment}");
                 return filters;
             }).metadata("maps.contract","v1").metadata("maps.backend",backend.getKey())
-              .metadata("connect-timeout",300).metadata("response-timeout",3000L).uri(backend.getValue()));
+              .metadata("connect-timeout",300).metadata("response-timeout",-1L)
+              .metadata(MapsGatewayFilter.PROCESSING_TIMEOUT,3000L).uri(backend.getValue()));
         }
         return routes.build();
     }

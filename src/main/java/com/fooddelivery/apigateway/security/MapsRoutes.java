@@ -41,6 +41,11 @@ public final class MapsRoutes {
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.GET, HttpMethod.POST));
         if (p.matches("/api/v1/metadata/records/"+UUID))
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.GET, HttpMethod.PUT));
+        if (p.matches("/api/v1/metadata/records/"+UUID+"/(?:publish|withdraw)"))
+            return new Policy("edge", "area-metadata", false, POST);
+        // The published record projection is anonymous: the filter strips cookies and CSRF for public routes.
+        if (p.matches("/api/v1/metadata/public/"+UUID))
+            return new Policy("edge", "public-metadata", true, READ);
         if (p.matches("/api/v1/metadata/templates/"+UUID))
             return new Policy("edge", "area-metadata", false, Set.of(HttpMethod.PUT));
         if (p.matches("/api/v1/metadata/(?:areas/"+UUID+"|records/"+UUID+"/(?:history|"+REVISION+")|templates/"+UUID+"/"+REVISION+")"))
@@ -71,11 +76,22 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/inspection/(?:saved-routes|saved-route-roads|road-sections)/"+UUID+"/"+REVISION)
                 || p.matches("/api/v1/inspection/routes/"+HASH+"/[0-2]"))
             return new Policy("edge", "routing-inspection", false, READ);
+        // Release-set and layer-catalogue administration. The edge decides every role, MFA, owner-separation
+        // and expected-revision rule from the current Java identity; the gateway only admits the exact shapes.
+        if (p.equals("/api/v1/releases/candidates")) return new Policy("edge", "release-manifest", false, POST);
+        if (p.matches("/api/v1/releases/candidates/"+HASH+"/review") || p.equals("/api/v1/releases/active"))
+            return new Policy("edge", "release-admin", false, POST);
+        if (p.equals("/api/v1/catalogue/candidates")) return new Policy("edge", "release-manifest", false, Set.of(HttpMethod.GET, HttpMethod.POST));
+        if (p.matches("/api/v1/catalogue/candidates/"+UUID+"/(?:jobs(?:/"+UUID+"/(?:steps|reviews))?|review)") || p.equals("/api/v1/catalogue/active"))
+            return new Policy("edge", "release-admin", false, p.endsWith("/jobs") ? Set.of(HttpMethod.GET, HttpMethod.POST) : POST);
+        if (p.equals("/api/v1/catalogue/reviews") || p.matches("/api/v1/catalogue/candidates/"+UUID))
+            return new Policy("edge", "release-admin", false, READ);
+        if (p.equals("/api/v1/catalogue")) return new Policy("edge", "public-catalogue", true, READ);
         if (p.equals("/api/v1/resources") || p.equals("/api/v1/search/resources")) return new Policy("edge", "resource-list", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"(?:/(?:history|export))?")) return new Policy("edge", "resource-read", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt")) return new Policy("edge", "resource-tile", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/export-jobs")) return new Policy("edge", "resource-export-job", false, POST);
-        if (p.matches("/api/v1/resource-grants/(?:area|saved_route|metadata)/"+UUID))
+        if (p.matches("/api/v1/resource-grants/(?:area|area_metadata|saved_route|metadata)/"+UUID))
             return new Policy("edge", "resource-grant", false, POST);
         if (p.matches("/api/v1/machine/resource-jobs/"+UUID+"/execute")) return new Policy("edge", "machine-job-execute", false, POST);
         if (p.equals("/api/v1/resource-jobs")) return new Policy("edge", "resource-job", false, READ);
@@ -95,12 +111,19 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/countries/IN/postal-codes/[0-9]{6}(?:/(?:geometry|neighbors))?")
                 || p.equals("/api/v1/countries/IN/postal-codes/at-point") || p.equals("/api/v1/postal-codes/at-point"))
             return new Policy("postal", "postal-read", true, READ);
-        if (p.equals("/api/v1/routes/analyses/capabilities")) return new Policy("routing", "analysis-capabilities", true, READ);
+        // Route operations go to the edge, which applies the shared heavy-operation budget across its replicas
+        // and forwards to routing. The public family is anonymous (credentials stripped); the editor family
+        // carries the session and is admitted on the verified actor's scoped budget.
+        if (p.equals("/api/v1/routes/analyses/capabilities")) return new Policy("edge", "analysis-capabilities", true, READ);
         if (p.matches("/api/v1/routes/(?:matrix|isochrones|match|optimise|elevation)"))
-            return new Policy("routing", "analysis-" + p.substring(p.lastIndexOf('/')+1), true, POST);
-        if (p.equals("/api/v1/routes/capabilities")) return new Policy("routing", "route-capabilities", true, READ);
-        if (p.equals("/api/v1/routes/directions")) return new Policy("routing", "route-directions", true, POST);
-        if (p.equals("/api/v1/routes/calculate")) return new Policy("routing", "route-calculate", true, POST);
+            return new Policy("edge", "analysis-" + p.substring(p.lastIndexOf('/')+1), true, POST);
+        if (p.equals("/api/v1/routes/capabilities")) return new Policy("edge", "route-capabilities", true, READ);
+        if (p.equals("/api/v1/routes/directions")) return new Policy("edge", "route-directions", true, POST);
+        if (p.equals("/api/v1/routes/calculate")) return new Policy("edge", "route-calculate", true, POST);
+        if (p.matches("/api/v1/editor-routes/(?:matrix|isochrones|match|optimise|elevation)"))
+            return new Policy("edge", "editor-analysis-" + p.substring(p.lastIndexOf('/')+1), false, POST);
+        if (p.matches("/api/v1/editor-routes/(?:calculate|directions)"))
+            return new Policy("edge", "editor-route-" + p.substring(p.lastIndexOf('/')+1), false, POST);
         return null;
     }
 }
