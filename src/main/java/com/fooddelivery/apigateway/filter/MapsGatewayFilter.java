@@ -133,6 +133,8 @@ public final class MapsGatewayFilter implements GlobalFilter, Ordered {
                 : metadataWrite ? 65_536
                 : envelope.equals("spatial-relations") || envelope.startsWith("analysis-") ? 1_048_576
                 : envelope.equals("routing-annotation") ? 400_000
+                // The edge's strict release-manifest and catalogue-bundle decoders bound these at 32768 bytes.
+                : envelope.equals("release-manifest") ? 32_768
                 : envelope.equals("route-calculate") || envelope.equals("route-directions") ? 4096 : 8192;
         if(exchange.getRequest().getHeaders().getContentLength()>maxBody)return fail(exchange,HttpStatus.PAYLOAD_TOO_LARGE,"PAYLOAD_TOO_LARGE");
         if(exchange.getRequest().getHeaders().containsKey(HttpHeaders.CONTENT_ENCODING))return fail(exchange,HttpStatus.UNSUPPORTED_MEDIA_TYPE,"REQUEST_ENCODING_REFUSED");

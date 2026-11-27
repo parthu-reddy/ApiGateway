@@ -76,6 +76,17 @@ public final class MapsRoutes {
         if (p.matches("/api/v1/inspection/(?:saved-routes|saved-route-roads|road-sections)/"+UUID+"/"+REVISION)
                 || p.matches("/api/v1/inspection/routes/"+HASH+"/[0-2]"))
             return new Policy("edge", "routing-inspection", false, READ);
+        // Release-set and layer-catalogue administration. The edge decides every role, MFA, owner-separation
+        // and expected-revision rule from the current Java identity; the gateway only admits the exact shapes.
+        if (p.equals("/api/v1/releases/candidates")) return new Policy("edge", "release-manifest", false, POST);
+        if (p.matches("/api/v1/releases/candidates/"+HASH+"/review") || p.equals("/api/v1/releases/active"))
+            return new Policy("edge", "release-admin", false, POST);
+        if (p.equals("/api/v1/catalogue/candidates")) return new Policy("edge", "release-manifest", false, Set.of(HttpMethod.GET, HttpMethod.POST));
+        if (p.matches("/api/v1/catalogue/candidates/"+UUID+"/(?:jobs(?:/"+UUID+"/(?:steps|reviews))?|review)") || p.equals("/api/v1/catalogue/active"))
+            return new Policy("edge", "release-admin", false, p.endsWith("/jobs") ? Set.of(HttpMethod.GET, HttpMethod.POST) : POST);
+        if (p.equals("/api/v1/catalogue/reviews") || p.matches("/api/v1/catalogue/candidates/"+UUID))
+            return new Policy("edge", "release-admin", false, READ);
+        if (p.equals("/api/v1/catalogue")) return new Policy("edge", "public-catalogue", true, READ);
         if (p.equals("/api/v1/resources") || p.equals("/api/v1/search/resources")) return new Policy("edge", "resource-list", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"(?:/(?:history|export))?")) return new Policy("edge", "resource-read", false, READ);
         if (p.matches("/api/v1/resources/"+UUID+"/tiles/[0-9]+/[0-9]+/[0-9]+\\.mvt")) return new Policy("edge", "resource-tile", false, READ);
